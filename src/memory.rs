@@ -1,13 +1,13 @@
 use x86_64::{
     structures::paging::{
         OffsetPageTable,
-        PageTable, Page, FrameAllocator, Size4KiB, PhysFrame, Mapper,
+        PageTable, FrameAllocator, Size4KiB, PhysFrame,
     },
     PhysAddr,
     VirtAddr,
 };
 
-use bootloader::bootinfo::{MemoryMap, MemoryRegionType};
+use bootloader_api::info::{MemoryRegion, MemoryRegionKind, MemoryRegions};
 
 /// Returns a mutable reference to the active level 4 table.
 ///
@@ -91,7 +91,7 @@ pub unsafe fn init(physical_memory_offset: VirtAddr) -> OffsetPageTable<'static>
 
 /// A FrameAllocator that returns usable frames from the bootloader's memory map.
 pub struct BootInfoFrameAllocator {
-    memory_map: &'static MemoryMap,
+    memory_regions: &'static [MemoryRegion],
     next: usize,
 }
 
@@ -101,22 +101,22 @@ impl BootInfoFrameAllocator {
     /// This function is unsafe because the caller must guarantee that the passed
     /// memory map is valid. The main requirement is that all frames that are marked
     /// as `USABLE` in it are really unused.
-    pub unsafe fn init(memory_map: &'static MemoryMap) -> Self {
+    pub unsafe fn init(memory_regions: &'static MemoryRegions) -> Self {
         BootInfoFrameAllocator {
-            memory_map,
+            memory_regions: &*memory_regions,
             next: 0,
         }
     }
 
     /// Returns an iterator over the usable frames specified in the memory map.
-    fn usable_frames(&self) -> impl Iterator<Item = PhysFrame> {
+    fn usable_frames(&self) -> impl Iterator<Item = PhysFrame> + '_ {
         // get usable regions from memory map
-        let regions = self.memory_map.iter();
+        let regions = self.memory_regions.iter();
         let usable_regions = regions
-            .filter(|r| r.region_type == MemoryRegionType::Usable);
+            .filter(|r| r.kind == MemoryRegionKind::Usable);
         // map each region to its address range
         let addr_ranges = usable_regions
-            .map(|r| r.range.start_addr()..r.range.end_addr());
+            .map(|r| r.start..r.end);
         // transform to an iterator of frame start addresses
         let frame_addresses = addr_ranges.flat_map(|r| r.step_by(4096));
         // create `PhysFrame` types from the start addresses

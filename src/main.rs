@@ -8,6 +8,7 @@
 #![test_runner(crate::test_runner)]
 
 mod allocator;
+mod device;
 mod gdt;
 mod interrupts;
 mod memory;
@@ -17,8 +18,7 @@ mod vga_text_buffer;
 
 extern crate alloc;
 
-use alloc::boxed::Box;
-use bootloader::{BootInfo, entry_point};
+use bootloader_api::{BootInfo, entry_point};
 use x86_64::VirtAddr;
 use core::panic::PanicInfo;
 
@@ -54,30 +54,28 @@ fn test_runner(tests: &[&dyn Fn()]) {
     }
 }
 
-entry_point!(kernel_main);
+use bootloader_api::config::{BootloaderConfig, Mapping};
 
-pub fn kernel_main(boot_info: &'static BootInfo) -> ! {
+pub static BOOTLOADER_CONFIG: BootloaderConfig = {
+    let mut config = BootloaderConfig::new_default();
+    config.mappings.physical_memory = Some(Mapping::Dynamic);
+    config
+};
+
+
+entry_point!(kernel_main, config = &BOOTLOADER_CONFIG);
+
+pub fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     println!("----<[ nocciolo ]>----");
 
     init(boot_info);
 
     let mut executor = Executor::new();
-    executor.spawn(Task::new(example_task()));
-    executor.spawn(Task::new(keyboard::print_keypresses())); // new
+    executor.spawn(Task::new(crate::device::init(boot_info)));
+    executor.spawn(Task::new(keyboard::print_keypresses()));
     executor.run();
 
-    hlt_loop();
-
     panic!("end of _start() reached!");
-}
-
-async fn async_number() -> u32 {
-    42
-}
-
-async fn example_task() {
-    let number = async_number().await;
-    println!("async number: {}", number);
 }
 
 #[alloc_error_handler]
@@ -102,10 +100,17 @@ fn init(boot_info: &'static BootInfo) {
 }
 
 fn init_heap(boot_info: &'static BootInfo) {
-    let phys_mem_offset = VirtAddr::new(boot_info.physical_memory_offset);
+    let physical_memory_offset;
+    if let bootloader_api::info::Optional::Some(offset) = boot_info.physical_memory_offset {
+        physical_memory_offset = offset;
+    } else {
+        panic!("No bootloader_api::BootInfo.physical_memory_offset");
+    }
+
+    let phys_mem_offset = VirtAddr::new(physical_memory_offset);
     let mut mapper = unsafe { memory::init(phys_mem_offset) };
     let mut frame_allocator = unsafe {
-        BootInfoFrameAllocator::init(&boot_info.memory_map)
+        BootInfoFrameAllocator::init(&boot_info.memory_regions)
     };
 
     allocator::init_heap(&mut mapper, &mut frame_allocator)
