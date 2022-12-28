@@ -176,8 +176,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "nocciolo"
-version = "0.1.0"
+name = "nocciolo-kernel"
+version = "0.1.1"
 dependencies = [
  "acpi",
  "aml",

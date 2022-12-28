@@ -1,0 +1,41 @@
+[package]
+name = "nocciolo-kernel"
+version = "0.1.1"
+edition = "2021"
+
+[dependencies]
+bootloader_api = { version = "*" }
+lazy_static = { version = "*", features = ["spin_no_std"] }
+linked_list_allocator = "*"
+pc-keyboard = "*"
+pic8259 = "*"
+spin = "0.5.2"
+uart_16550 = "*"
+volatile = "0.2.6" # Upgrade issues
+x86_64 = "*"
+
+acpi = "*"
+aml = "*"
+rsdp = "*"
+
+[dependencies.conquer-once]
+version = "*"
+default-features = false
+
+[dependencies.crossbeam-queue]
+version = "*"
+default-features = false
+features = ["alloc"]
+
+[dependencies.futures-util]
+version = "0.3.4"
+default-features = false
+features = ["alloc"]
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+
+[build-dependencies]
