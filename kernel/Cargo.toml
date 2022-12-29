@@ -31,11 +31,3 @@ features = ["alloc"]
 version = "0.3.4"
 default-features = false
 features = ["alloc"]
-
-[profile.dev]
-panic = "abort"
-
-[profile.release]
-panic = "abort"
-
-[build-dependencies]

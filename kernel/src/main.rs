@@ -5,6 +5,7 @@
 #![feature(alloc_error_handler)]
 #![feature(const_mut_refs)]
 #![feature(custom_test_frameworks)]
+#![feature(lang_items)]
 #![test_runner(crate::test_runner)]
 
 mod allocator;
@@ -115,4 +116,10 @@ fn init_heap(boot_info: &'static BootInfo) {
 
     allocator::init_heap(&mut mapper, &mut frame_allocator)
         .expect("heap initialization failed");
+}
+
+#[lang = "eh_personality"]
+#[no_mangle]
+pub extern "C" fn eh_personality() {
+    loop {}
 }
