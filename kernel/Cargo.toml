@@ -15,7 +15,7 @@ volatile = "0.2.6" # Upgrade issues
 x86_64 = "*"
 
 acpi = "*"
-aml = "*"
+# aml = "*"
 rsdp = "*"
 
 [dependencies.conquer-once]
