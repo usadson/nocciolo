@@ -13,6 +13,9 @@ name = "nocciolo"
 version = "0.1.1"
 edition = "2021"
 
+[dependencies]
+ovmf-prebuilt = "0.1.0-alpha.1"
+
 [workspace]
 members = [
     "kernel"
