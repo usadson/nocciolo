@@ -1,6 +1,6 @@
-[build-dependencies]
-bootloader = "*"
-nocciolo-kernel = { path = "kernel", artifact = "bin", target="x86_64-unknown-none" }
+# [build-dependencies]
+# bootloader = "*"
+# nocciolo-kernel = { path = "kernel", artifact = "bin", target="x86_64-unknown-none" }
 
 [profile.dev]
 panic = "abort"
@@ -8,15 +8,13 @@ panic = "abort"
 [profile.release]
 panic = "abort"
 
-[package]
-name = "nocciolo"
-version = "0.1.1"
-edition = "2021"
-
-[dependencies]
-ovmf-prebuilt = "0.1.0-alpha.1"
+# [package]
+# name = "nocciolo"
+# version = "0.1.1"
+# edition = "2021"
 
 [workspace]
+resolver = "2"
 members = [
     "kernel"
 ]

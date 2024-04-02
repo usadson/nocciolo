@@ -4,12 +4,12 @@ version = "0.1.1"
 edition = "2021"
 
 [dependencies]
-bootloader_api = { version = "*" }
+bootloader = { version = "*", features = ["map_physical_memory"] }
 lazy_static = { version = "*", features = ["spin_no_std"] }
 linked_list_allocator = "*"
 pc-keyboard = "*"
 pic8259 = "*"
-spin = "0.5.2"
+spin = "0.9.8"
 uart_16550 = "*"
 volatile = "0.2.6" # Upgrade issues
 x86_64 = "*"

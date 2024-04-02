@@ -19,7 +19,7 @@ mod vga_text_buffer;
 
 extern crate alloc;
 
-use bootloader_api::{BootInfo, entry_point};
+use bootloader::{entry_point, BootInfo};
 use x86_64::VirtAddr;
 use core::panic::PanicInfo;
 
@@ -55,18 +55,9 @@ fn test_runner(tests: &[&dyn Fn()]) {
     }
 }
 
-use bootloader_api::config::{BootloaderConfig, Mapping};
+entry_point!(kernel_main);
 
-pub static BOOTLOADER_CONFIG: BootloaderConfig = {
-    let mut config = BootloaderConfig::new_default();
-    config.mappings.physical_memory = Some(Mapping::Dynamic);
-    config
-};
-
-
-entry_point!(kernel_main, config = &BOOTLOADER_CONFIG);
-
-pub fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
+pub fn kernel_main(boot_info: &'static BootInfo) -> ! {
     println!("----<[ nocciolo ]>----");
 
     init(boot_info);
@@ -101,17 +92,12 @@ fn init(boot_info: &'static BootInfo) {
 }
 
 fn init_heap(boot_info: &'static BootInfo) {
-    let physical_memory_offset;
-    if let bootloader_api::info::Optional::Some(offset) = boot_info.physical_memory_offset {
-        physical_memory_offset = offset;
-    } else {
-        panic!("No bootloader_api::BootInfo.physical_memory_offset");
-    }
+    let physical_memory_offset = boot_info.physical_memory_offset;
 
     let phys_mem_offset = VirtAddr::new(physical_memory_offset);
     let mut mapper = unsafe { memory::init(phys_mem_offset) };
     let mut frame_allocator = unsafe {
-        BootInfoFrameAllocator::init(&boot_info.memory_regions)
+        BootInfoFrameAllocator::init(&boot_info.memory_map)
     };
 
     allocator::init_heap(&mut mapper, &mut frame_allocator)
