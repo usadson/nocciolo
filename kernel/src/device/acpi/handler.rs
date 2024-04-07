@@ -54,7 +54,10 @@ impl AcpiHandler for NoccioloAcpiHandler {
 
         let count = region.mapped_length() / 4096;
         for _ in 0..count {
-            serial_println!("{:x} Is aligned: {}", virt.as_u64(), virt.is_aligned(4096u64));
+            if LOG_ENABLED {
+                serial_println!("{:x} Is aligned: {}", virt.as_u64(), virt.is_aligned(4096u64));
+            }
+
             let page = Page::<Size4KiB>::containing_address(virt);
             with_mapper(|mapper| {
                 let (_, flusher) = mapper.unmap(page).expect("Failed to unmap ACPI");

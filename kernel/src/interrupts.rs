@@ -6,6 +6,7 @@ use x86_64::structures::idt::{
 
 use pic8259::ChainedPics;
 use lazy_static::lazy_static;
+use log::trace;
 
 use crate::{hlt_loop, interrupt_println, print, println, serial::print_in_interrupt, serial_println, vga_text_buffer};
 
@@ -45,9 +46,9 @@ pub static PICS: spin::Mutex<ChainedPics> = spin::Mutex::new(
 );
 
 pub fn init_idt() {
-    serial_println!("[IDT] Loading IDT");
+    trace!("Loading IDT");
     IDT.load();
-    serial_println!("[IDT] Loaded IDT");
+    trace!("Loaded IDT");
 }
 
 #[inline(always)]

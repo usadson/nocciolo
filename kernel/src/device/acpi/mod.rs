@@ -52,7 +52,7 @@ struct NoccioloAmlContext {
 impl NoccioloAmlContext {
     pub fn new() -> Self {
         Self {
-            context: AmlContext::new(Box::new(NoccioloAmlHandler), aml::DebugVerbosity::All),
+            context: AmlContext::new(Box::new(NoccioloAmlHandler), aml::DebugVerbosity::None),
         }
     }
 

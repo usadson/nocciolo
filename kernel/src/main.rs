@@ -31,6 +31,7 @@ use bootloader_api::{
 
 use x86_64::VirtAddr;
 use core::panic::PanicInfo;
+use log::{error, info, trace};
 
 use crate::{memory::BootInfoFrameAllocator, task::{executor::Executor, Task, keyboard}};
 use crate::vga_text_buffer::WRITER;
@@ -81,12 +82,10 @@ pub fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     serial_println!("----<[ nocciolo ]>----");
     init(boot_info);
 
-    serial_println!("FB: {:#?}", boot_info.framebuffer.as_ref().unwrap());
-
     println!("----<[ nocciolo ]>----");
 
     let mut executor = Executor::new();
-    executor.spawn(Task::new(crate::device::init(boot_info)));
+    executor.spawn(Task::new(device::init(boot_info)));
     executor.spawn(Task::new(keyboard::print_keypresses()));
     executor.run();
 
@@ -101,9 +100,7 @@ fn alloc_error_handler(layout: alloc::alloc::Layout) -> ! {
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    interrupt_println!("[PANIC] {info}");
-    unsafe { vga_text_buffer::WRITER.force_unlock() };
-    println!("[PANIC] {}", info);
+    error!("[PANIC] {info}");
     hlt_loop();
 }
 
@@ -117,18 +114,18 @@ fn init(boot_info: &'static BootInfo) {
     gdt::init();
     interrupts::init_idt();
 
-    serial_println!("[init] Initializing PICS");
+    trace!("Initializing PICS");
     unsafe { interrupts::PICS.lock().initialize() };
 
-    serial_println!("[init] Enabling Interrupts");
+    trace!("Enabling Interrupts");
     x86_64::instructions::interrupts::enable();
 
-    serial_println!("[init] Initializing Heap");
+    trace!("Initializing Heap");
     init_heap(boot_info);
 
 
 
-    serial_println!("[init] Finished");
+    info!("Finished Initializing");
 }
 
 fn init_heap(boot_info: &'static BootInfo) {
