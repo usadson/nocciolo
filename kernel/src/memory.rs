@@ -1,4 +1,13 @@
-use bootloader::bootinfo::{MemoryMap, MemoryRegion, MemoryRegionType};
+use bootloader_api::{
+    BootInfo,
+    info::{
+        MemoryRegion,
+        MemoryRegions,
+        MemoryRegionKind,
+    },
+};
+use lazy_static::lazy_static;
+use spin::Mutex;
 use x86_64::{
     structures::paging::{
         OffsetPageTable,
@@ -7,6 +16,12 @@ use x86_64::{
     PhysAddr,
     VirtAddr,
 };
+use crate::memory;
+
+lazy_static! {
+    pub static ref MAPPER: Mutex<Option<OffsetPageTable<'static>>> = Mutex::new(None);
+    pub static ref FRAME_ALLOCATOR: Mutex<Option<BootInfoFrameAllocator>> = Mutex::new(None);
+}
 
 
 /// Returns a mutable reference to the active level 4 table.
@@ -84,9 +99,26 @@ fn translate_addr_inner(addr: VirtAddr, physical_memory_offset: VirtAddr)
 /// complete physical memory is mapped to virtual memory at the passed
 /// `physical_memory_offset`. Also, this function must be only called once
 /// to avoid aliasing `&mut` references (which is undefined behavior).
-pub unsafe fn init(physical_memory_offset: VirtAddr) -> OffsetPageTable<'static> {
+pub unsafe fn init_mapper(physical_memory_offset: VirtAddr) {
     let level_4_table = active_level_4_table(physical_memory_offset);
-    OffsetPageTable::new(level_4_table, physical_memory_offset)
+
+    *MAPPER.lock() = Some(OffsetPageTable::new(level_4_table, physical_memory_offset));
+}
+
+pub unsafe fn init_frame_allocator(memory_regions: &'static MemoryRegions) {
+    *FRAME_ALLOCATOR.lock() = Some(BootInfoFrameAllocator::init(memory_regions))
+}
+
+pub fn with_mapper<F: FnOnce(&mut OffsetPageTable<'static>) -> R, R>(f: F) -> R {
+    let mut mapper = MAPPER.lock();
+    let mapper = mapper.as_mut().unwrap();
+    f(mapper)
+}
+
+pub fn with_frame_allocator<F: FnOnce(&mut BootInfoFrameAllocator) -> R, R>(f: F) -> R {
+    let mut allocator = FRAME_ALLOCATOR.lock();
+    let allocator = allocator.as_mut().unwrap();
+    f(allocator)
 }
 
 /// A FrameAllocator that returns usable frames from the bootloader's memory map.
@@ -101,7 +133,7 @@ impl BootInfoFrameAllocator {
     /// This function is unsafe because the caller must guarantee that the passed
     /// memory map is valid. The main requirement is that all frames that are marked
     /// as `USABLE` in it are really unused.
-    pub unsafe fn init(memory_regions: &'static MemoryMap) -> Self {
+    pub unsafe fn init(memory_regions: &'static MemoryRegions) -> Self {
         BootInfoFrameAllocator {
             memory_regions: &*memory_regions,
             next: 0,
@@ -113,14 +145,25 @@ impl BootInfoFrameAllocator {
         // get usable regions from memory map
         let regions = self.memory_regions.iter();
         let usable_regions = regions
-            .filter(|r| r.region_type == MemoryRegionType::Usable);
+            .filter(|r| r.kind == MemoryRegionKind::Usable);
         // map each region to its address range
         let addr_ranges = usable_regions
-            .map(|r| r.range.start_addr()..r.range.end_addr());
+            .map(|r| r.start..r.end);
         // transform to an iterator of frame start addresses
         let frame_addresses = addr_ranges.flat_map(|r| r.step_by(4096));
         // create `PhysFrame` types from the start addresses
         frame_addresses.map(|addr| PhysFrame::containing_address(PhysAddr::new(addr)))
+    }
+
+    pub fn allocate_frame_from_physical(&mut self, ptr: PhysAddr) -> Option<PhysFrame> {
+        let ptr = ptr.align_down(4096u64);
+        for frame in self.usable_frames() {
+            if frame.start_address() == ptr {
+                return Some(frame);
+            }
+        }
+
+        None
     }
 }
 

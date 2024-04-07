@@ -64,6 +64,10 @@ pub struct Writer {
 }
 
 impl Writer {
+    pub fn set_buffer(&mut self, buf: &[u8]) {
+        self.buffer = unsafe { &mut *(buf.as_ptr() as *mut Buffer) };
+    }
+
     pub fn write_byte(&mut self, byte: u8) {
         match byte {
             b'\n' => self.new_line(),

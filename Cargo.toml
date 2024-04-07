@@ -1,20 +1,14 @@
-# [build-dependencies]
-# bootloader = "*"
-# nocciolo-kernel = { path = "kernel", artifact = "bin", target="x86_64-unknown-none" }
+[workspace]
+resolver = "2"
+members = [
+    "kernel",
+    "os",
+]
+
+default-members = ["os"]
 
 [profile.dev]
 panic = "abort"
 
 [profile.release]
 panic = "abort"
-
-# [package]
-# name = "nocciolo"
-# version = "0.1.1"
-# edition = "2021"
-
-[workspace]
-resolver = "2"
-members = [
-    "kernel"
-]

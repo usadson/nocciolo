@@ -1,6 +1,7 @@
 pub mod bump;
 pub mod fixed_size_block;
 pub mod linked_list;
+pub mod page;
 
 use alloc::alloc::{GlobalAlloc, Layout};
 use core::ptr::null_mut;

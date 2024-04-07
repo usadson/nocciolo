@@ -4,6 +4,7 @@ use x86_64::VirtAddr;
 use x86_64::structures::tss::TaskStateSegment;
 use x86_64::structures::gdt::{GlobalDescriptorTable, Descriptor, SegmentSelector};
 use lazy_static::lazy_static;
+use crate::serial_println;
 
 pub const DOUBLE_FAULT_IST_INDEX: u16 = 0;
 
@@ -40,9 +41,15 @@ pub fn init() {
     use x86_64::instructions::tables::load_tss;
     use x86_64::instructions::segmentation::{CS, Segment};
 
+
+    serial_println!("[init] Loading GDT");
     GDT.0.load();
+    serial_println!("[init] Loaded GDT");
+
+    serial_println!("[init] Loading TSS");
     unsafe {
         CS::set_reg(GDT.1.code_selector);
         load_tss(GDT.1.tss_selector);
     }
+    serial_println!("[init] Loaded TSS");
 }

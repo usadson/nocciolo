@@ -4,6 +4,7 @@ use alloc::task::Wake;
 use core::task::Waker;
 use crossbeam_queue::ArrayQueue;
 use core::task::{Context, Poll};
+use crate::serial_println;
 
 struct TaskWaker {
     task_id: TaskId,
@@ -96,6 +97,7 @@ impl Executor {
 
         interrupts::disable();
         if self.task_queue.is_empty() {
+            serial_println!("Task Queue empty");
             enable_and_hlt();
         } else {
             interrupts::enable();
