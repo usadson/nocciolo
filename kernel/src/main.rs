@@ -6,6 +6,7 @@
 #![feature(const_mut_refs)]
 #![feature(custom_test_frameworks)]
 #![feature(lang_items)]
+#![feature(allocator_api)]
 #![test_runner(crate::test_runner)]
 
 mod allocator;

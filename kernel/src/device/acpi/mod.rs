@@ -1,14 +1,20 @@
 // Copyright (C) 2024 Tristan Gerritsen <tristan@thewoosh.org>
 // All Rights Reserved.
 
+use alloc::alloc::Global;
 use alloc::boxed::Box;
 use alloc::vec::Vec;
+use core::alloc::Allocator;
+use core::any::{type_name, TypeId};
+use core::fmt::Debug;
+use core::mem::size_of;
 use core::ptr::{slice_from_raw_parts, slice_from_raw_parts_mut};
-use acpi::{AcpiHandler, AcpiTables, AmlTable, Sdt};
+use acpi::{AcpiHandler, AcpiTables, AmlTable, PciConfigRegions, Sdt};
 use aml::AmlContext;
 use bootloader_api::BootInfo;
 use futures_util::future::err;
 use log::trace;
+use x86_64::instructions::port::{Port, PortRead, PortWrite};
 use crate::device::DeviceError;
 
 mod handler;
@@ -37,7 +43,9 @@ pub(super) fn init(boot_info: &'static BootInfo) {
 
     trace!("[acpi] Platform Info: {:#?}", tables.platform_info());
 
-    let mut context = NoccioloAmlContext::new();
+    let regions = PciConfigRegions::new(&tables).ok();
+
+    let mut context = NoccioloAmlContext::new(regions);
     context.load_acpi(&tables).expect("Failed to populate ACPI information");
     context.initialize_objects().expect("Failed to initialize AML objects");
     // context.debug();
@@ -50,9 +58,13 @@ struct NoccioloAmlContext {
 }
 
 impl NoccioloAmlContext {
-    pub fn new() -> Self {
+    pub fn new(regions: Option<PciConfigRegions<'static, Global>>) -> Self {
+        let handler = NoccioloAmlHandler {
+            regions,
+        };
+
         Self {
-            context: AmlContext::new(Box::new(NoccioloAmlHandler), aml::DebugVerbosity::None),
+            context: AmlContext::new(Box::new(handler), aml::DebugVerbosity::None),
         }
     }
 
@@ -108,86 +120,163 @@ impl NoccioloAmlContext {
     }
 }
 
-struct NoccioloAmlHandler;
+struct NoccioloAmlHandler  {
+    regions: Option<PciConfigRegions<'static, Global>>,
+}
 
 impl aml::Handler for NoccioloAmlHandler {
     fn read_u8(&self, address: usize) -> u8 {
-        todo!()
+        aml_read(address)
     }
 
     fn read_u16(&self, address: usize) -> u16 {
-        todo!()
+        aml_read(address)
     }
 
     fn read_u32(&self, address: usize) -> u32 {
-        todo!()
+        aml_read(address)
     }
 
     fn read_u64(&self, address: usize) -> u64 {
-        todo!()
+        aml_read(address)
     }
 
     fn write_u8(&mut self, address: usize, value: u8) {
-        todo!()
+        aml_write(address, value)
     }
 
     fn write_u16(&mut self, address: usize, value: u16) {
-        todo!()
+        aml_write(address, value)
     }
 
     fn write_u32(&mut self, address: usize, value: u32) {
-        todo!()
+        aml_write(address, value)
     }
 
     fn write_u64(&mut self, address: usize, value: u64) {
-        todo!()
+        aml_write(address, value)
     }
 
     fn read_io_u8(&self, port: u16) -> u8 {
-        todo!()
+        aml_read_port(port)
     }
 
     fn read_io_u16(&self, port: u16) -> u16 {
-        todo!()
+        aml_read_port(port)
     }
 
     fn read_io_u32(&self, port: u16) -> u32 {
-        todo!()
+        aml_read_port(port)
     }
 
     fn write_io_u8(&self, port: u16, value: u8) {
-        todo!()
+        aml_write_port(port, value);
     }
 
     fn write_io_u16(&self, port: u16, value: u16) {
-        todo!()
+        aml_write_port(port, value);
     }
 
     fn write_io_u32(&self, port: u16, value: u32) {
-        todo!()
+        aml_write_port(port, value);
     }
 
     fn read_pci_u8(&self, segment: u16, bus: u8, device: u8, function: u8, offset: u16) -> u8 {
-        todo!()
+        aml_read_pci(PciRequest { segment, bus, device, function, offset })
     }
 
     fn read_pci_u16(&self, segment: u16, bus: u8, device: u8, function: u8, offset: u16) -> u16 {
-        todo!()
+        aml_read_pci(PciRequest { segment, bus, device, function, offset })
     }
 
     fn read_pci_u32(&self, segment: u16, bus: u8, device: u8, function: u8, offset: u16) -> u32 {
-        todo!()
+        aml_read_pci(PciRequest { segment, bus, device, function, offset })
     }
 
     fn write_pci_u8(&self, segment: u16, bus: u8, device: u8, function: u8, offset: u16, value: u8) {
-        todo!()
+        aml_write_pci(PciRequest { segment, bus, device, function, offset }, value)
     }
 
     fn write_pci_u16(&self, segment: u16, bus: u8, device: u8, function: u8, offset: u16, value: u16) {
-        todo!()
+        aml_write_pci(PciRequest { segment, bus, device, function, offset }, value)
     }
 
     fn write_pci_u32(&self, segment: u16, bus: u8, device: u8, function: u8, offset: u16, value: u32) {
-        todo!()
+        aml_write_pci(PciRequest { segment, bus, device, function, offset }, value)
+    }
+}
+
+fn aml_read<T>(address: usize) -> T
+        where T: Debug + Copy {
+    trace!("Reading at address 0x{address:x} type {}", type_name::<T>());
+
+    let mapping = unsafe { NoccioloAcpiHandler.map_physical_region::<T>(address, size_of::<T>()) };
+
+    unsafe { *mapping.virtual_start().as_ptr() }
+}
+
+fn aml_write<T>(address: usize, value: T)
+    where T: Debug + Copy {
+    trace!("Writing at address 0x{address:x} type {} value {value:?}", type_name::<T>());
+
+    let mapping = unsafe { NoccioloAcpiHandler.map_physical_region::<T>(address, size_of::<T>()) };
+
+    *unsafe { &mut *mapping.virtual_start().as_ptr() } = value;
+}
+
+fn aml_read_pci<T>(request: PciRequest) -> T
+        where T: Debug + Copy + PortRead {
+    trace!("Reading PCI {request:?} type {}", type_name::<T>());
+
+    let address = request.address();
+
+    unsafe {
+        let mut port = Port::new(0xCF8);
+        port.write(address);
+    }
+
+    unsafe {
+        let mut port = Port::new(0xCF8);
+        port.read()
+    }
+}
+
+fn aml_write_pci<T>(request: PciRequest, value: T)
+        where T: Debug + Copy + PortWrite {
+    trace!("Writing PCI {request:?} type {} value {value:?}", type_name::<T>())
+}
+
+fn aml_read_port<T>(port: u16) -> T
+        where T: Debug + Copy + PortRead {
+    trace!("Reading I/O port 0x{port:x} type {}", type_name::<T>());
+
+    let mut port = Port::new(port);
+    unsafe { port.read() }
+}
+
+fn aml_write_port<T>(port: u16, value: T)
+    where T: Debug + Copy + PortWrite {
+    trace!("Writing I/O port 0x{port:x} type {} value {value:?}", type_name::<T>());
+
+    let mut port = Port::new(port);
+    unsafe { port.write(value) }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd)]
+struct PciRequest {
+    pub segment: u16,
+    pub bus: u8,
+    pub device: u8,
+    pub function: u8,
+    pub offset: u16,
+}
+
+impl PciRequest {
+    pub const fn address(&self) -> u32 {
+        ((self.bus as u32) << 16)
+            | ((self.device as u32) << 11)
+            | ((self.function as u32) << 8)
+            | (self.offset as u32 & 0xFC)
+            | (0x80000000u32)
     }
 }
