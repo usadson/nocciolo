@@ -2,7 +2,7 @@
 // All Rights Reserved.
 
 use std::process::Command;
-use std::io::{ErrorKind, Write};
+use std::io::Write;
 
 fn main() -> Result<(), std::io::Error> {
     let mut cmd;
@@ -63,7 +63,9 @@ fn create_qemu_cmd() -> Command {
     cmd.args(["-d", "int"]);
 
     // GDB stuff
-    cmd.args(["-s", "-S"]);
+    if std::env::args().nth(2) == Some("debug".into()) {
+        cmd.args(["-s", "-S"]);
+    }
 
     // Attach serial output to stdio
     cmd.args(["-serial", "stdio"]);
@@ -81,11 +83,12 @@ fn create_lldb_command() -> Result<Command, std::io::Error> {
     writeln!(file, "target create {}", env!("KERNEL"))?;
     writeln!(file, "target modules load --file {} --slide 0x8000000000", env!("KERNEL"))?;
     writeln!(file, "gdb-remote localhost:1234")?;
-    writeln!(file, "breakpoint set --name kernel_main")?;
+    writeln!(file, "breakpoint set --name alloc_error_handler")?;
     writeln!(file, "breakpoint set --name page_fault_handler")?;
     writeln!(file, "breakpoint set --name double_fault_handler")?;
     writeln!(file, "breakpoint set --name breakpoint_handler")?;
     writeln!(file, "breakpoint set --name hlt_loop")?;
+    writeln!(file, "breakpoint set --name fallback_allocator_oom")?;
     writeln!(file, "continue")?;
 
     cmd.args(["-s", path]);

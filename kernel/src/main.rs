@@ -16,6 +16,7 @@ mod memory;
 mod serial;
 mod task;
 mod vga_text_buffer;
+mod logging;
 
 extern crate alloc;
 
@@ -68,6 +69,7 @@ fn test_runner(tests: &[&dyn Fn()]) {
 pub static BOOTLOADER_CONFIG: BootloaderConfig = {
     let mut config = BootloaderConfig::new_default();
     config.mappings.physical_memory = Some(Mapping::Dynamic);
+    config.kernel_stack_size = 1024 * 1024;
     config
 };
 
@@ -91,6 +93,7 @@ pub fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     panic!("end of _start() reached!");
 }
 
+#[no_mangle]
 #[alloc_error_handler]
 fn alloc_error_handler(layout: alloc::alloc::Layout) -> ! {
     panic!("allocation error: {:?}", layout)
@@ -105,6 +108,8 @@ fn panic(info: &PanicInfo) -> ! {
 }
 
 fn init(boot_info: &'static BootInfo) {
+    logging::init();
+
     if let Some(fb) = boot_info.framebuffer.as_ref() {
         WRITER.lock().set_buffer(fb.buffer());
     }

@@ -1,6 +1,7 @@
 use super::Locked;
 use alloc::alloc::GlobalAlloc;
 use core::{alloc::Layout, mem, ptr, ptr::NonNull};
+use crate::serial_println;
 
 struct ListNode {
     next: Option<&'static mut ListNode>,
@@ -40,9 +41,18 @@ impl FixedSizeBlockAllocator {
     fn fallback_alloc(&mut self, layout: Layout) -> *mut u8 {
         match self.fallback_allocator.allocate_first_fit(layout) {
             Ok(ptr) => ptr.as_ptr(),
-            Err(_) => ptr::null_mut(),
+            Err(_) => {
+                fallback_allocator_oom();
+                ptr::null_mut()
+            },
         }
     }
+}
+
+/// Invoked when the fallback allocator reached its Out Of Memory condition.
+#[no_mangle]
+pub fn fallback_allocator_oom() {
+    serial_println!("[CRITICAL] [alloc] Out of memory!")
 }
 
 /// Choose an appropriate block size for the given layout.

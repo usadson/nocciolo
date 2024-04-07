@@ -8,7 +8,7 @@ use core::ptr::null_mut;
 use fixed_size_block::FixedSizeBlockAllocator;
 
 pub const HEAP_START: u64 = 0x_4444_4444_0000;
-pub const HEAP_SIZE: u64 = 100 * 1024; // 100 KiB
+pub const HEAP_SIZE: u64 = 1024 * 1024; // 1 MiB
 
 pub struct Dummy;
 
