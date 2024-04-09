@@ -2,6 +2,7 @@
 // All Rights Reserved.
 
 mod acpi;
+pub mod pci;
 
 use ::acpi::AcpiError;
 use aml::AmlError;
@@ -9,6 +10,7 @@ use bootloader_api::BootInfo;
 
 pub async fn init(boot_info: &'static BootInfo) {
     acpi::init(boot_info);
+    pci::init(boot_info);
 }
 
 #[derive(Debug)]
