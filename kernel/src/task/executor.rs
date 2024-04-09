@@ -97,11 +97,9 @@ impl Executor {
 
         interrupts::disable();
         if self.task_queue.is_empty() {
-            serial_println!("Task Queue empty");
             enable_and_hlt();
         } else {
             interrupts::enable();
         }
     }
 }
-

@@ -57,4 +57,3 @@ impl From<AmlError> for DeviceError {
         Self::aml(value)
     }
 }
-

@@ -87,8 +87,6 @@ pub fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     executor.spawn(Task::new(device::init(boot_info)));
     executor.spawn(Task::new(keyboard::print_keypresses()));
     executor.run();
-
-    panic!("end of _start() reached!");
 }
 
 #[no_mangle]
