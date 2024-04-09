@@ -4,7 +4,7 @@
 mod config;
 mod types;
 
-use log::trace;
+use log::{info, trace};
 
 pub use self::{
     config::{
@@ -28,14 +28,20 @@ pub(super) fn init(boot_info: &bootloader_api::BootInfo) {
 
     let mut devices = 0;
     for (addr, vendor_id, device_id) in mechanism.enumerate() {
-        devices += 0;
-        trace!("Device  vendor={:x} {}  device={:x} {}  addr={addr:?}",
+        devices += 1;
+        info!("Device vendor={:x} device={:x} addr={addr:?}",
                 vendor_id.value(),
-                vendor_id.name().unwrap_or_default(),
                 device_id.value(),
-                device_id.name(vendor_id).unwrap_or_default(),
         );
+
+        let class = mechanism.class_code(addr);
+        let subclass = mechanism.subclass(addr);
+        info!("  Class: {class:?}, subclass 0x{:x} {}", subclass.value(), subclass.name(class).unwrap_or_default());
+
+        if let Some(vendor_name) = vendor_id.name() {
+            info!("  Name: {vendor_name}     {}", device_id.name(vendor_id).unwrap_or_default());
+        }
     }
 
-    trace!("Found {devices} device");
+    info!("Found {devices} PCI devices");
 }

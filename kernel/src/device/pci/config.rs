@@ -61,7 +61,7 @@ pub trait ConfigurationSpaceMechanism {
     }
 
     fn class_code(&self, addr: PciAddress) -> PciClassCode {
-        PciClassCode::new((self.read_word(addr, 0xA) & 0xFF) as u8)
+        PciClassCode::new((self.read_word(addr, 0xA) >> 8) as u8)
     }
 
     fn enumerate<'a>(&'a self) -> impl Iterator<Item = (PciAddress, PciVendorId, PciDeviceId)> + '_
