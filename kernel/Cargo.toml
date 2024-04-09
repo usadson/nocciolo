@@ -18,6 +18,8 @@ acpi = "5"
 aml = "0.16"
 log = "0.4"
 
+noto-sans-mono-bitmap = { version = "*", features = ["unicode-specials"] }
+
 [dependencies.conquer-once]
 version = "*"
 default-features = false

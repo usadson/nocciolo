@@ -10,7 +10,7 @@ use core::fmt::Debug;
 use core::mem::size_of;
 use core::ptr::{slice_from_raw_parts, slice_from_raw_parts_mut};
 use acpi::{AcpiHandler, AcpiTables, AmlTable, PciConfigRegions, Sdt};
-use aml::AmlContext;
+use aml::{AmlContext, AmlName, AmlValue};
 use bootloader_api::BootInfo;
 use futures_util::future::err;
 use log::trace;
@@ -112,11 +112,34 @@ impl NoccioloAmlContext {
 
     pub fn debug(&mut self) {
         trace!("[acpi] [aml] Traversing table...");
+        let mut data = Vec::new();
         self.context.namespace.traverse(|name, level| {
-            trace!("[acpi] [aml] [traverse] {name}");
+            trace!("[traverse key] {name} {:?}", level.typ);
+
+            for (seg, val) in &level.values {
+                data.push((name.clone(), seg.clone(), val.clone()));
+            }
 
             Ok(true)
         }).expect("Failed to traverse AML namespace");
+
+        for (name, seg, val) in data {
+            let value = self.context.namespace.get(val);
+
+            // match value {
+            //     Ok(AmlValue::Buffer(..)) | Ok(AmlValue::Method {..})
+            //         | Ok(AmlValue::Package(..)) => {
+            //         trace!("[traverse val] {name} {seg:?} <truncated>");
+            //
+            //     }
+            //
+            //     Ok(val) => trace!("[traverse val] {name} {seg:?} {val:?}"),
+            //
+            //     _ => trace!("[traverse val] {name} {seg:?} {value:?}"),
+            // }
+
+            trace!("[traverse val] {name} {seg:?} {value:?}")
+        }
     }
 }
 

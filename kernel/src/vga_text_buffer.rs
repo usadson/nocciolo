@@ -1,12 +1,27 @@
-use core::fmt;
+use core::{default, fmt, ptr::slice_from_raw_parts_mut};
+use bootloader_api::info::{FrameBuffer, FrameBufferInfo, PixelFormat};
 use lazy_static::lazy_static;
-use volatile::Volatile;
+use noto_sans_mono_bitmap::{FontWeight, RasterHeight, RasterizedChar};
+
+use crate::serial_println;
+
+static EMPTY: &[u8] = &[];
 
 lazy_static! {
     pub static ref WRITER: spin::Mutex<Writer> = spin::Mutex::new(Writer {
-        column_position: 0,
-        color_code: ColorCode::new(Color::Yellow, Color::Black),
-        buffer: unsafe { &mut *(0xb8000 as *mut Buffer) },
+        info: FrameBufferInfo {
+            byte_len: 0,
+            width: 0,
+            height: 0,
+            pixel_format: PixelFormat::U8,
+            bytes_per_pixel: 0,
+            stride: 0,
+        },
+        x_pos: 0,
+        y_pos: 0,
+        framebuffer: unsafe { &mut *slice_from_raw_parts_mut(EMPTY.as_ptr() as *mut _, 0) },
+        color: Color::White,
+        state: Default::default(),
     });
 }
 
@@ -32,93 +47,264 @@ pub enum Color {
     White = 15,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(transparent)]
-struct ColorCode(u8);
-
-impl ColorCode {
-    fn new(foreground: Color, background: Color) -> ColorCode {
-        ColorCode((background as u8) << 4 | (foreground as u8))
+impl Color {
+    pub fn rgb(&self) -> [u8; 4] {
+        let alpha = 0x00;
+        match self {
+            Self::Black => [0x00, 0x00, 0x00, alpha],
+            Self::Blue => [0x00, 0x00, 0xFF, alpha],
+            Self::Green => [0x00, 0xFF, 0x00, alpha],
+            Self::Cyan => [0x00, 0xFF, 0xFF, alpha],
+            Self::Red => [0xFF, 0x00, 0x00, alpha],
+            Self::Magenta => [0xFF, 0x00, 0xFF, alpha],
+            Self::Brown => [0xFF, 0xFF, 0x80, alpha], // check
+            Self::LightGray => [0x55, 0x55, 0x55, alpha],
+            Self::DarkGray => [0xAA, 0xAA, 0xAA, alpha],
+            Self::LightBlue => [0x00, 0x00, 0x80, alpha],
+            Self::LightGreen => [0x00, 0x80, 0x80, alpha],
+            Self::LightCyan => [0x00, 0x80, 0x80, alpha],
+            Self::LightRed => [0x80, 0x00, 0x00, alpha],
+            Self::Pink => [0xFF, 0xCC, 0xCC, alpha],
+            Self::Yellow => [0xFF, 0xFF, 0x00, alpha],
+            Self::White => [0xFF, 0xFF, 0xFF, alpha],
+        }
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(C)]
-struct ScreenCharacter {
-    ascii_character: u8,
-    color_code: ColorCode,
+use noto_sans_mono_bitmap::get_raster_width;
+
+
+fn get_char_raster(c: char) -> RasterizedChar {
+    fn get(c: char) -> Option<RasterizedChar> {
+        noto_sans_mono_bitmap::get_raster(
+            c,
+            font_constants::FONT_WEIGHT,
+            font_constants::CHAR_RASTER_HEIGHT,
+        )
+    }
+    get(c).unwrap_or_else(|| get(font_constants::BACKUP_CHAR).expect("Should get raster of backup char."))
 }
 
-const BUFFER_HEIGHT: usize = 25;
-const BUFFER_WIDTH: usize = 80;
+mod font_constants {
+    use super::*;
 
-#[repr(transparent)]
-struct Buffer {
-    chars: [[Volatile<ScreenCharacter>; BUFFER_WIDTH]; BUFFER_HEIGHT],
+    pub const LINE_SPACING: usize = 2;
+    pub const LETTER_SPACING: usize = 0;
+    pub const BORDER_PADDING: usize = 1;
+
+    pub const CHAR_RASTER_HEIGHT: RasterHeight = RasterHeight::Size16;
+    pub const CHAR_RASTER_WIDTH: usize = get_raster_width(FontWeight::Regular, CHAR_RASTER_HEIGHT);
+    pub const BACKUP_CHAR: char = '�';
+    pub const FONT_WEIGHT: FontWeight = FontWeight::Regular;
 }
 
 pub struct Writer {
-    column_position: usize,
-    color_code: ColorCode,
-    buffer: &'static mut Buffer,
+    framebuffer: &'static mut [u8],
+    info: FrameBufferInfo,
+    x_pos: usize,
+    y_pos: usize,
+    color: Color,
+    state: WriterState,
+}
+
+#[derive(Default, Clone, Copy)]
+enum WriterState {
+    #[default]
+    Normal,
+    Escape,
+    FirstCode,
+    SecondCode(char),
+    Finishing(char, char),
+    Color(Color),
+}
+
+impl WriterState {
+    pub fn feed(&mut self, ch: char) -> bool {
+        match self {
+            Self::Normal => {
+                if ch != '\x1b' {
+                    *self = Self::Normal;
+                    return true;
+                }
+
+                *self = Self::Escape;
+                false
+            }
+
+            Self::Escape => {
+                if ch != '[' {
+                    *self = Self::Normal;
+                    return true;
+                }
+
+                *self = Self::FirstCode;
+                false
+            }
+
+            Self::FirstCode => {
+                if ch == '0' {
+                    *self = Self::Finishing(ch, ch);
+                } else {
+                    *self = Self::SecondCode(ch);
+                }
+                false
+            }
+
+            Self::SecondCode(first) => {
+                *self = Self::Finishing(*first, ch);
+                false
+            }
+
+            Self::Finishing(first, second) => {
+                if ch != 'm' {
+                    *self = Self::Normal;
+                    return true;
+                }
+
+                if *first == '0' {
+                    *self = Self::Color(Color::White);
+                    return false;
+                }
+
+                if *first != '3' {
+                    *self = Self::Normal;
+                    return false;
+                }
+
+                *self = Self::Color(match *second {
+                    '0' => Color::Black,
+                    '1' => Color::Red,
+                    '2' => Color::Green,
+                    '3' => Color::Yellow,
+                    '4' => Color::Blue,
+                    '5' => Color::Magenta,
+                    '6' => Color::Cyan,
+                    '7' => Color::White,
+                    _ => {
+                        *self = Self::Normal;
+                        return false;
+                    }
+                });
+
+                false
+            }
+
+            Self::Color(..) => true,
+        }
+    }
 }
 
 impl Writer {
-    pub fn set_buffer(&mut self, buf: &[u8]) {
-        self.buffer = unsafe { &mut *(buf.as_ptr() as *mut Buffer) };
+    pub fn set_buffer(&mut self, buf: &'static [u8]) {
+        let data = buf.as_ptr() as *mut u8;
+        let len = buf.len();
+        let slice = unsafe { &mut *slice_from_raw_parts_mut(data, len) };
+        self.framebuffer = slice;
+
+        self.clear();
     }
 
-    pub fn write_byte(&mut self, byte: u8) {
-        match byte {
-            b'\n' => self.new_line(),
-            byte => {
-                if self.column_position >= BUFFER_WIDTH {
-                    self.new_line();
+    pub fn set_fb(&mut self, fb: &'static FrameBuffer) {
+        self.set_buffer(fb.buffer());
+        self.info = fb.info();
+
+        serial_println!("FB: {:#?}", self.info);
+    }
+
+    fn newline(&mut self) {
+        self.y_pos += font_constants::CHAR_RASTER_HEIGHT.val() + font_constants::LINE_SPACING;
+        self.carriage_return()
+    }
+
+    fn carriage_return(&mut self) {
+        self.x_pos = font_constants::BORDER_PADDING;
+    }
+
+    pub fn clear(&mut self) {
+        self.x_pos = font_constants::BORDER_PADDING;
+        self.y_pos = font_constants::BORDER_PADDING;
+        self.framebuffer.fill(0);
+    }
+
+    fn width(&self) -> usize {
+        self.info.width
+    }
+
+    fn height(&self) -> usize {
+        self.info.height
+    }
+
+    fn write_char(&mut self, c: char) {
+        if !self.state.feed(c) {
+
+            if let WriterState::Color(color) = self.state {
+                self.state = WriterState::Normal;
+                self.color = color;
+            }
+
+            return;
+        }
+
+        match c {
+            '\n' => self.newline(),
+            '\r' => self.carriage_return(),
+            c => {
+                let new_xpos = self.x_pos + font_constants::CHAR_RASTER_WIDTH;
+                if new_xpos >= self.width() {
+                    self.newline();
                 }
-
-                let row = BUFFER_HEIGHT - 1;
-                let col = self.column_position;
-
-                let color_code = self.color_code;
-                self.buffer.chars[row][col].write(ScreenCharacter {
-                    ascii_character: byte,
-                    color_code,
-                });
-                self.column_position += 1;
+                let new_ypos =
+                    self.y_pos + font_constants::CHAR_RASTER_HEIGHT.val() + font_constants::BORDER_PADDING;
+                if new_ypos >= self.height() {
+                    self.clear();
+                }
+                self.write_rendered_char(get_char_raster(c));
             }
         }
     }
 
-    pub fn write_string(&mut self, s: &str) {
-        for byte in s.bytes() {
-            match byte {
-                // printable ASCII byte or newline
-                0x20..=0x7e | b'\n' => self.write_byte(byte),
-                // not part of printable ASCII range
-                _ => self.write_byte(0xfe),
+    fn write_rendered_char(&mut self, rendered_char: RasterizedChar) {
+        for (y, row) in rendered_char.raster().iter().enumerate() {
+            for (x, byte) in row.iter().enumerate() {
+                self.write_pixel(self.x_pos + x, self.y_pos + y, *byte);
             }
+        }
+        self.x_pos += rendered_char.width() + font_constants::LETTER_SPACING;
+    }
 
+    fn write_pixel(&mut self, x: usize, y: usize, intensity: u8) {
+        let pixel_offset = y * self.info.stride + x;
+        let color = self.get_color(intensity);
+        let bytes_per_pixel = self.info.bytes_per_pixel;
+        let byte_offset = pixel_offset * bytes_per_pixel;
+        self.framebuffer[byte_offset..(byte_offset + bytes_per_pixel)]
+            .copy_from_slice(&color[..bytes_per_pixel]);
+        let _ = unsafe { core::ptr::read_volatile(&self.framebuffer[byte_offset]) };
+    }
+
+    fn write_string(&mut self, s: &str) {
+        for c in s.chars() {
+            self.write_char(c);
         }
     }
 
-    fn new_line(&mut self) {
-        for row in 1..BUFFER_HEIGHT {
-            for col in 0..BUFFER_WIDTH {
-                let character = self.buffer.chars[row][col].read();
-                self.buffer.chars[row - 1][col].write(character);
-            }
-        }
-        self.clear_row(BUFFER_HEIGHT - 1);
-        self.column_position = 0;
-    }
+    fn get_color(&mut self, intensity: u8) -> [u8; 4] {
+        let mut color = self.color.rgb();
 
-    fn clear_row(&mut self, row: usize) {
-        let blank = ScreenCharacter {
-            ascii_character: b' ',
-            color_code: self.color_code,
-        };
-        for col in 0..BUFFER_WIDTH {
-            self.buffer.chars[row][col].write(blank);
+        let intensity = intensity as usize;
+        for x in color.iter_mut() {
+            let value = *x as usize;
+            *x = ((value * intensity) / 255) as u8;
+        }
+
+        match self.info.pixel_format {
+            PixelFormat::Rgb => color,
+            PixelFormat::Bgr => [color[2], color[1], color[0], color[3]],
+            PixelFormat::U8 => [if intensity > 200 { 0xf } else { 0 }, 0, 0, 0],
+            other => {
+                self.info.pixel_format = PixelFormat::Rgb;
+                panic!("pixel format {:?} not supported in logger", other)
+            }
         }
     }
 }

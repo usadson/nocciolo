@@ -1,10 +1,10 @@
-use crate::println;
 use core::{pin::Pin, task::{Poll, Context}};
 use conquer_once::spin::OnceCell;
 use crossbeam_queue::ArrayQueue;
 use futures_util::stream::Stream;
 
 use futures_util::stream::StreamExt;
+use log::warn;
 use pc_keyboard::{layouts, DecodedKey, HandleControl, Keyboard, ScancodeSet1};
 use crate::print;
 
@@ -55,12 +55,12 @@ impl Stream for ScancodeStream {
 pub(crate) fn add_scancode(scancode: u8) {
     if let Ok(queue) = SCANCODE_QUEUE.try_get() {
         if let Err(_) = queue.push(scancode) {
-            println!("WARNING: scancode queue full; dropping keyboard input");
+            warn!("Scancode queue full; dropping keyboard input");
         } else {
-            WAKER.wake(); // new
+            WAKER.wake();
         }
     } else {
-        println!("WARNING: scancode queue uninitialized");
+        warn!("Scancode queue uninitialized");
     }
 }
 

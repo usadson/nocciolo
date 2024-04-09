@@ -6,7 +6,6 @@ mod acpi;
 use ::acpi::AcpiError;
 use aml::AmlError;
 use bootloader_api::BootInfo;
-use futures_util::future::err;
 
 pub async fn init(boot_info: &'static BootInfo) {
     acpi::init(boot_info);
@@ -25,7 +24,7 @@ impl DeviceError {
             ..self
         }
     }
-    
+
     pub fn acpi(error: AcpiError) -> Self {
         DeviceError {
             kind: DeviceErrorKind::Acpi(error),

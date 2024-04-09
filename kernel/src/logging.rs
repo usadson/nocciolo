@@ -1,5 +1,5 @@
 use core::fmt::{Display, Formatter, Write};
-use log::{LevelFilter, Metadata, Record};
+use log::{Level, LevelFilter, Metadata, Record};
 use crate::serial_println;
 
 static LOGGER: Logger = Logger{};
@@ -17,6 +17,7 @@ pub struct Colored<S> {
     inner: S,
 }
 
+#[allow(unused)]
 pub enum Color {
     Black,
     Red,
@@ -37,6 +38,10 @@ impl log::Log for Logger {
 
     fn log(&self, record: &Record) {
         serial_println!("[{}] [\x1b[31m{}\x1b[0m] {}", record.metadata().target().white(), record.metadata().level().stylized(), record.args());
+
+        if record.level() != Level::Trace {
+            crate::vga_text_buffer::_print(format_args!("[{}] [\x1b[31m{}\x1b[0m] {}\n", record.metadata().target().white(), record.metadata().level().stylized(), record.args()));
+        }
     }
 
     fn flush(&self) {
@@ -77,6 +82,7 @@ impl<S> Display for Colored<S>
     }
 }
 
+#[allow(unused)]
 pub trait Colorize: Sized {
     fn black(self) -> Colored<Self> {
         self.with_color(Color::Black)

@@ -709,6 +709,7 @@ dependencies = [
  "lazy_static",
  "linked_list_allocator",
  "log",
+ "noto-sans-mono-bitmap",
  "pc-keyboard",
  "pic8259",
  "spin",
@@ -716,6 +717,12 @@ dependencies = [
  "volatile 0.2.7",
  "x86_64",
 ]
+
+[[package]]
+name = "noto-sans-mono-bitmap"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9aa163ae3f5d28f11e4906fac432e39937daee74920caec72a4962810646e0fb"
 
 [[package]]
 name = "ovmf-prebuilt"

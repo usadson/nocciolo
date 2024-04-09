@@ -83,8 +83,6 @@ pub fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     serial_println!("----<[ nocciolo ]>----");
     init(boot_info);
 
-    println!("----<[ nocciolo ]>----");
-
     let mut executor = Executor::new();
     executor.spawn(Task::new(device::init(boot_info)));
     executor.spawn(Task::new(keyboard::print_keypresses()));
@@ -109,8 +107,10 @@ fn init(boot_info: &'static BootInfo) {
     logging::init();
 
     if let Some(fb) = boot_info.framebuffer.as_ref() {
-        WRITER.lock().set_buffer(fb.buffer());
+        WRITER.lock().set_fb(fb);
     }
+
+    info!("----<[ nocciolo ]>----");
 
     gdt::init();
     interrupts::init_idt();

@@ -8,7 +8,7 @@ use pic8259::ChainedPics;
 use lazy_static::lazy_static;
 use log::trace;
 
-use crate::{hlt_loop, interrupt_println, print, println, serial::print_in_interrupt, serial_println, vga_text_buffer};
+use crate::{hlt_loop, interrupt_println, print, vga_text_buffer};
 
 pub const PIC_1_OFFSET: u8 = 32;
 pub const PIC_2_OFFSET: u8 = PIC_1_OFFSET + 8;
@@ -96,6 +96,8 @@ fn page_fault_handler(stack_frame: InterruptStackFrame, error_code: PageFaultErr
 extern "x86-interrupt"
 fn keyboard_interrupt_handler(_stack_frame: InterruptStackFrame) {
     use x86_64::instructions::port::Port;
+
+    interrupt_begin();
 
     let mut port = Port::new(0x60);
 
