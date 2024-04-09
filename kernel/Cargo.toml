@@ -16,6 +16,7 @@ x86_64 = "*"
 
 acpi = "5"
 aml = "0.16"
+elf = { version = "0.7", default-features = false }
 log = "0.4"
 
 noto-sans-mono-bitmap = { version = "*", features = ["unicode-specials"] }

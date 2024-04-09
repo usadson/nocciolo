@@ -14,6 +14,7 @@ mod device;
 mod gdt;
 mod interrupts;
 mod memory;
+mod meta;
 mod serial;
 mod task;
 mod vga_text_buffer;
@@ -83,6 +84,8 @@ pub fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     serial_println!("----<[ nocciolo ]>----");
     init(boot_info);
 
+    // crash_test();
+
     let mut executor = Executor::new();
     executor.spawn(Task::new(device::init(boot_info)));
     executor.spawn(Task::new(keyboard::print_keypresses()));
@@ -122,9 +125,16 @@ fn init(boot_info: &'static BootInfo) {
     trace!("Initializing Heap");
     init_heap(boot_info);
 
-
+    meta::init(boot_info);
 
     info!("Finished Initializing");
+}
+
+fn crash_test() {
+    println!("Crashing...");
+    let ptr = 0x0 as *mut u8;
+    unsafe { ptr.write(0) };
+    println!("Crashed!");
 }
 
 fn init_heap(boot_info: &'static BootInfo) {

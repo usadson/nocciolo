@@ -8,7 +8,7 @@ use pic8259::ChainedPics;
 use lazy_static::lazy_static;
 use log::trace;
 
-use crate::{hlt_loop, interrupt_println, print, vga_text_buffer};
+use crate::{hlt_loop, interrupt_println, meta::symbols, print, vga_text_buffer};
 
 pub const PIC_1_OFFSET: u8 = 32;
 pub const PIC_2_OFFSET: u8 = PIC_1_OFFSET + 8;
@@ -109,6 +109,7 @@ fn page_fault_handler(stack_frame: InterruptStackFrame, error_code: PageFaultErr
     interrupt_println!("EXCEPTION: PAGE FAULT");
     interrupt_println!("Accessed Address: {:?}", Cr2::read());
     interrupt_println!("Error Code: {:?}", error_code);
+    interrupt_println!("Function: {:?}", symbols::resolve(stack_frame.stack_pointer.as_u64()));
     interrupt_println!("{:#?}", stack_frame);
     hlt_loop();
 }
