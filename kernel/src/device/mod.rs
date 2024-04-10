@@ -3,6 +3,7 @@
 
 mod acpi;
 pub mod pci;
+mod net;
 
 use ::acpi::AcpiError;
 use aml::AmlError;
@@ -11,6 +12,10 @@ use bootloader_api::BootInfo;
 pub async fn init(boot_info: &'static BootInfo) {
     acpi::init(boot_info);
     pci::init(boot_info);
+}
+
+pub trait GenericDevice {
+    fn initialize(&mut self, pci: &impl pci::ConfigurationSpaceMechanism) -> Result<(), DeviceError>;
 }
 
 #[derive(Debug)]

@@ -11,13 +11,57 @@ pub struct PciAddress {
 
 impl PciAddress {
     #[must_use]
-    pub fn create_local_bus_address(&self, offset: u16) -> u32 {
+    pub fn create_local_bus_address(&self, offset: u16, enabled: bool) -> u32 {
+        let enabled = if enabled {
+            0x80000000u32
+        } else {
+            0u32
+        };
+
         ((self.bus as u32) << 16)
             | ((self.device as u32) << 11)
             | ((self.function as u32) << 8)
             | (offset as u32 & 0xFC)
-            | (0x80000000u32)
+            | (enabled)
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PciBaseAddress(u32);
+
+impl PciBaseAddress {
+    #[must_use]
+    pub fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    #[must_use]
+    pub const fn value(&self) -> u32 {
+        self.0
+    }
+
+    #[must_use]
+    pub const fn kind(&self) -> PciBaseAddressType {
+        if self.0 & 0b1 == 1 {
+            PciBaseAddressType::IOSpace
+        } else {
+            PciBaseAddressType::MemorySpace
+        }
+    }
+
+    #[must_use]
+    pub const fn actual_address(&self) -> u32 {
+        match self.kind() {
+            PciBaseAddressType::MemorySpace => self.value() & 0xFFF0,
+            PciBaseAddressType::IOSpace => self.value() & 0xFFFFFFF0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PciBaseAddressType {
+    MemorySpace,
+    IOSpace,
 }
 
 
@@ -136,6 +180,36 @@ impl PciDeviceId {
             PciVendorId::BOCHS => DeviceNames::get_bochs(self.0),
             PciVendorId::INTEL_CORPORATION => DeviceNames::get_intel(self.0),
             _ => None,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PciHeaderType {
+    Normal,
+    PciToPciBridge,
+    CardBusBridge,
+    Unknown(u8),
+}
+
+impl PciHeaderType {
+    #[must_use]
+    pub const fn new(id: u8) -> Self {
+        match id {
+            0x0 => Self::Normal,
+            0x1 => Self::PciToPciBridge,
+            0x2 => Self::CardBusBridge,
+            _ => Self::Unknown(id),
+        }
+    }
+
+    #[must_use]
+    pub const fn bar_count(&self) -> usize {
+        match self {
+            Self::Normal => 6,
+            Self::PciToPciBridge => 2,
+            Self::CardBusBridge => 0,
+            Self::Unknown(..) => 0,
         }
     }
 }

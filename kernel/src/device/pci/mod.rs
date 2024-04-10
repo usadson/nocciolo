@@ -15,6 +15,7 @@ pub use self::{
         PciAddress,
         PciClassCode,
         PciDeviceId,
+        PciHeaderType,
         PciSubclass,
         PciVendorId,
     },
