@@ -96,7 +96,7 @@ fn breakpoint_handler(stack_frame: InterruptStackFrame) {
 extern "x86-interrupt"
 fn double_fault_handler(stack_frame: InterruptStackFrame, _error_code: u64) -> ! {
     interrupt_begin();
-    panic!("EXCEPTION: DOUBLE FAULT\n{:#?}", stack_frame);
+    panic!("EXCEPTION: DOUBLE FAULT ({_error_code:X})\n{:#?}", stack_frame);
     hlt_loop();
 }
 
@@ -139,7 +139,7 @@ fn keyboard_interrupt_handler(_stack_frame: InterruptStackFrame) {
 #[no_mangle]
 extern "x86-interrupt"
 fn timer_interrupt_handler(_stack_frame: InterruptStackFrame) {
-    print!(".");
+    // Do some stuff here
 
     unsafe {
         PICS.lock()

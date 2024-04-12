@@ -1,4 +1,4 @@
-use core::fmt::{Display, Formatter, Write};
+use core::fmt::{Debug, Display, Formatter, LowerHex, UpperHex, Write};
 use log::{Level, LevelFilter, Metadata, Record};
 use crate::serial_println;
 
@@ -73,6 +73,24 @@ impl Display for Color {
     }
 }
 
+impl<S> LowerHex for Colored<S>
+        where S: LowerHex {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        self.color.fmt(f)?;
+        self.inner.fmt(f)?;
+        f.write_str("\x1b[0m")
+    }
+}
+
+impl<S> UpperHex for Colored<S>
+        where S: UpperHex {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        self.color.fmt(f)?;
+        self.inner.fmt(f)?;
+        f.write_str("\x1b[0m")
+    }
+}
+
 impl<S> Display for Colored<S>
         where S: Display {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
@@ -116,11 +134,6 @@ pub trait Colorize: Sized {
         self.with_color(Color::White)
     }
 
-    fn with_color(self, color: Color) -> Colored<Self>;
-}
-
-impl<T> Colorize for T
-        where T: Sized {
     fn with_color(self, color: Color) -> Colored<Self> {
         Colored {
             inner: self,
@@ -128,6 +141,14 @@ impl<T> Colorize for T
         }
     }
 }
+
+impl Colorize for &str {}
+impl Colorize for log::Level {}
+impl Colorize for u8 {}
+impl Colorize for u16 {}
+impl Colorize for u32 {}
+impl Colorize for u64 {}
+impl Colorize for usize {}
 
 trait Stylized: Sized {
     fn stylized(self) -> Colored<Self>;

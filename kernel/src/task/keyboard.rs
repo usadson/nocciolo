@@ -6,7 +6,7 @@ use futures_util::stream::Stream;
 use futures_util::stream::StreamExt;
 use log::warn;
 use pc_keyboard::{layouts, DecodedKey, HandleControl, Keyboard, ScancodeSet1};
-use crate::print;
+use crate::{meta::Console, print};
 
 static SCANCODE_QUEUE: OnceCell<ArrayQueue<u8>> = OnceCell::uninit();
 use futures_util::task::AtomicWaker;
@@ -87,6 +87,7 @@ pub async fn print_keypresses() {
         if let Ok(Some(key_event)) = keyboard.add_byte(scancode) {
             if let Some(key) = keyboard.process_keyevent(key_event) {
                 match key {
+                    DecodedKey::Unicode('\u{0008}') => Console::backspace(),
                     DecodedKey::Unicode(character) => print!("{}", character),
                     DecodedKey::RawKey(key) => print!("{:?}", key),
                 }

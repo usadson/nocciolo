@@ -3,7 +3,10 @@
 
 use bootloader_api::BootInfo;
 
+mod console;
 pub mod symbols;
+
+pub use self::console::Console;
 
 pub fn init(boot_info: &'static BootInfo) {
     self::symbols::init(boot_info);

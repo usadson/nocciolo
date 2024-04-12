@@ -19,6 +19,7 @@ lazy_static! {
         },
         x_pos: 0,
         y_pos: 0,
+        last_width: 0,
         framebuffer: unsafe { &mut *slice_from_raw_parts_mut(EMPTY.as_ptr() as *mut _, 0) },
         color: Color::White,
         state: Default::default(),
@@ -101,6 +102,7 @@ mod font_constants {
 pub struct Writer {
     framebuffer: &'static mut [u8],
     info: FrameBufferInfo,
+    last_width: usize,
     x_pos: usize,
     y_pos: usize,
     color: Color,
@@ -269,7 +271,14 @@ impl Writer {
                 self.write_pixel(self.x_pos + x, self.y_pos + y, *byte);
             }
         }
-        self.x_pos += rendered_char.width() + font_constants::LETTER_SPACING;
+        self.last_width = rendered_char.width();
+        self.x_pos += self.last_width + font_constants::LETTER_SPACING;
+    }
+
+    pub fn backspace(&mut self) {
+        self.x_pos -= self.last_width;
+        self.write_char(' ');
+        self.x_pos -= self.last_width;
     }
 
     fn write_pixel(&mut self, x: usize, y: usize, intensity: u8) {

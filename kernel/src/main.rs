@@ -5,6 +5,7 @@
 #![feature(alloc_error_handler)]
 #![feature(const_mut_refs)]
 #![feature(custom_test_frameworks)]
+#![allow(internal_features)]
 #![feature(lang_items)]
 #![feature(allocator_api)]
 #![test_runner(crate::test_runner)]
@@ -35,7 +36,7 @@ use x86_64::VirtAddr;
 use core::panic::PanicInfo;
 use log::{error, info, trace};
 
-use crate::{memory::BootInfoFrameAllocator, task::{executor::Executor, Task, keyboard}};
+use crate::task::{executor::Executor, Task, keyboard};
 use crate::vga_text_buffer::WRITER;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -87,7 +88,6 @@ pub fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     // crash_test();
 
     let mut executor = Executor::new();
-    executor.spawn(Task::new(device::init(boot_info)));
     executor.spawn(Task::new(keyboard::print_keypresses()));
     executor.run();
 }
