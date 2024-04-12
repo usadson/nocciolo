@@ -125,12 +125,23 @@ fn init(boot_info: &'static BootInfo) {
     trace!("Initializing Heap");
     init_heap(boot_info);
 
+    trace!("Initializing ACPI");
+    device::acpi::init(boot_info);
+
+    if let Err(e) = interrupts::apic::init(boot_info) {
+        trace!("Failed to initialize APIC: {e:?}");
+    }
+
+    trace!("Initializing Kernel Runtime");
     meta::init(boot_info);
+
+    trace!("Initializing Devices");
+    device::init(boot_info);
 
     info!("Finished Initializing");
 }
 
-fn crash_test() {
+pub fn crash_test() {
     println!("Crashing...");
     let ptr = 0x0 as *mut u8;
     unsafe { ptr.write(0) };

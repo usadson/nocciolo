@@ -12,7 +12,7 @@ use crate::serial_println;
 static LOG_ENABLED: bool = false;
 
 #[derive(Clone, Copy, Debug)]
-pub(super) struct NoccioloAcpiHandler;
+pub struct NoccioloAcpiHandler;
 
 impl AcpiHandler for NoccioloAcpiHandler {
     unsafe fn map_physical_region<T>(&self, physical_address: usize, size: usize) -> PhysicalMapping<Self, T> {

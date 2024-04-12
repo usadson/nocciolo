@@ -4,25 +4,39 @@
 use alloc::alloc::Global;
 use alloc::boxed::Box;
 use alloc::vec::Vec;
-use core::alloc::Allocator;
-use core::any::{type_name, TypeId};
+use spin::Mutex;
+use core::any::type_name;
 use core::fmt::Debug;
 use core::mem::size_of;
-use core::ptr::{slice_from_raw_parts, slice_from_raw_parts_mut};
-use acpi::{AcpiHandler, AcpiTables, AmlTable, PciConfigRegions, Sdt};
-use aml::{AmlContext, AmlName, AmlValue};
+use core::ptr::slice_from_raw_parts_mut;
+
+use acpi::{fadt::Fadt, madt::Madt, AcpiHandler, AcpiTables, AmlTable, PciConfigRegions, PhysicalMapping};
+use aml::{AmlContext, AmlValue};
 use bootloader_api::BootInfo;
-use futures_util::future::err;
-use log::trace;
+use lazy_static::lazy_static;
+use log::{info, trace};
 use x86_64::instructions::port::{Port, PortRead, PortWrite};
 use crate::device::DeviceError;
 
 mod handler;
 mod rsdp;
 
-pub(self) use self::handler::NoccioloAcpiHandler;
+pub use self::handler::NoccioloAcpiHandler;
 
-pub(super) fn init(boot_info: &'static BootInfo) {
+lazy_static! {
+    pub static ref ACPI_DATA: Mutex<AcpiData> = Mutex::new(AcpiData::default());
+}
+
+type AcpiDataTable<T> = Option<PhysicalMapping<NoccioloAcpiHandler, T>>;
+
+#[derive(Debug, Default)]
+pub struct AcpiData {
+    pub madt: AcpiDataTable<Madt>,
+}
+
+pub(crate) fn init(boot_info: &'static BootInfo) {
+    let mut acpi_data = ACPI_DATA.lock();
+
     trace!("[acpi] Looking for RSDP...");
     let Some(rsdp) = rsdp::find_rsdp(boot_info) else {return};
 
@@ -40,6 +54,18 @@ pub(super) fn init(boot_info: &'static BootInfo) {
             return;
         }
     };
+
+    if let Ok(fadt) = tables.find_table::<Fadt>() {
+        let fadt: &Fadt = &*fadt;
+        trace!("FADT: {fadt:#?}");
+    }
+
+    match tables.find_table::<Madt>() {
+        Ok(madt) => acpi_data.madt = Some(madt),
+        Err(e) => {
+            trace!("Failed to find MADT table: {e:?}");
+        }
+    }
 
     trace!("[acpi] Platform Info: {:#?}", tables.platform_info());
 
@@ -123,8 +149,8 @@ impl NoccioloAmlContext {
             Ok(true)
         }).expect("Failed to traverse AML namespace");
 
-        for (name, seg, val) in data {
-            let value = self.context.namespace.get(val);
+        for (name, seg, val) in &data {
+            let value = self.context.namespace.get(*val);
 
             // match value {
             //     Ok(AmlValue::Buffer(..)) | Ok(AmlValue::Method {..})
@@ -139,6 +165,16 @@ impl NoccioloAmlContext {
             // }
 
             trace!("[traverse val] {name} {seg:?} {value:?}")
+        }
+
+        // GPE = General Purpose Event
+        // FDC = Floppy Disk Controller (*check)
+        for (name, seg, val) in data {
+            let value = self.context.namespace.get(val);
+
+            if let Ok(AmlValue::Device) = &value {
+                info!("ACPI Device: {name} {}", seg.as_str());
+            }
         }
     }
 }

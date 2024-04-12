@@ -1,3 +1,8 @@
+// Copyright (C) 2024 Tristan Gerritsen <tristan@thewoosh.org>
+// All Rights Reserved.
+
+pub mod apic;
+
 use x86_64::structures::idt::{
     InterruptDescriptorTable,
     InterruptStackFrame,

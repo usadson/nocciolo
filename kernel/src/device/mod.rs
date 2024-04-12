@@ -1,7 +1,7 @@
 // Copyright (C) 2023 - 2024 Tristan Gerritsen <tristan@thewoosh.org>
 // All Rights Reserved.
 
-mod acpi;
+pub mod acpi;
 pub mod pci;
 mod net;
 
@@ -9,8 +9,7 @@ use ::acpi::AcpiError;
 use aml::AmlError;
 use bootloader_api::BootInfo;
 
-pub async fn init(boot_info: &'static BootInfo) {
-    acpi::init(boot_info);
+pub fn init(boot_info: &'static BootInfo) {
     pci::init(boot_info);
 }
 
@@ -25,7 +24,7 @@ pub struct DeviceError {
 }
 
 impl DeviceError {
-    pub fn with_region(mut self, region: &'static str) -> Self {
+    pub fn with_region(self, region: &'static str) -> Self {
         Self {
             region,
             ..self
