@@ -3,6 +3,7 @@
 
 pub mod acpi;
 pub mod pci;
+pub mod pit;
 mod net;
 
 use ::acpi::AcpiError;

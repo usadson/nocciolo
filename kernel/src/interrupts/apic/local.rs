@@ -26,7 +26,7 @@ use x86_64::{
 use crate::{device::acpi::{
     NoccioloAcpiHandler,
     ACPI_DATA,
-}, logging::Colorize};
+}, interrupts::PIC_1_OFFSET, logging::Colorize};
 
 const IA32_APIC_BASE_MSR: u32 = 0x1B;
 
@@ -84,7 +84,21 @@ impl LocalApic {
         }
     }
 
-    pub fn enable(&mut self) {
+    pub fn initialize(&mut self) {
+        self.enable();
+
+        // Set the LVT Timer interrupt index to our expected interrupt
+        self.write(LocalApicRegister::LvtTimer, PIC_1_OFFSET as _);
+
+        self.set_timer_initial_counter(0);
+        // sleep :(
+        let count = self.current_count();
+        // adjust
+        // divide
+
+    }
+
+    fn enable(&mut self) {
         // let vector = self.read(LocalApicOffset::SpuriousInterruptVector);
         // let vector = vector | 0x100;
         let vector = 0xFF;
@@ -101,8 +115,21 @@ impl LocalApic {
         self.read(LocalApicRegister::Id)
     }
 
-    pub fn set_timer(&mut self, divide: u32) {
+    fn set_timer_divide(&mut self, divide: u32) {
+        self.write(LocalApicRegister::DivideConfiguration, divide);
+    }
 
+    pub fn set_timer_initial_counter(&mut self, counter: u32) {
+        self.write(LocalApicRegister::InitialCount, counter);
+    }
+
+    pub fn stop_timer(&mut self) {
+        let reg = LocalVectorTableRegister::new_masked_timer();
+        self.write(LocalApicRegister::LvtTimer, reg.as_u32());
+    }
+
+    pub fn current_count(&self) -> u32 {
+        self.read(LocalApicRegister::CurrentCount)
     }
 
     pub fn version(&self) -> u32 {
@@ -238,17 +265,88 @@ pub enum ApicRegisterPermissions {
     WriteOnly,
 }
 
-pub struct LocalVectorTableRegister {
+struct LocalVectorTableRegister {
     vector: u8,
-    interrupt_pending: bool,
-    mask: bool,
+    delivery_mode: VectorDeliveryMode,
+    delivery_status: VectorDeliverStatus,
+    is_low_triggered: bool,
+    is_remote_irr: bool,
+    trigger_mode: VectorTriggerMode,
+    is_masked: bool,
+    timer_mode: VectorTimerMode,
+}
+
+impl LocalVectorTableRegister {
+    pub fn new_timer(vector: u8, status: VectorDeliverStatus, is_masked: bool, mode: VectorTimerMode) -> Self {
+        Self {
+            vector,
+            delivery_mode: VectorDeliveryMode::NMI,
+            delivery_status: status,
+            is_masked,
+            timer_mode: mode,
+
+            // Reserved:
+            is_low_triggered: false,
+            is_remote_irr: false,
+            trigger_mode: VectorTriggerMode::Edge,
+        }
+    }
+
+    pub fn new_masked_timer() -> Self {
+        Self::new_timer(0, VectorDeliverStatus::Idle, true, VectorTimerMode::Periodic)
+    }
+
+    pub fn as_u32(&self) -> u32 {
+        let reserved = 0;
+        (self.vector as u32 & 0b1111_1111)
+            | ((self.delivery_mode as u32 & 0b111) << 8)
+            | ((reserved as u32 & 0b1) << 11)
+            | ((self.delivery_status as u32 & 0b1) << 12)
+            | ((self.is_low_triggered as u32 & 0b1) << 13)
+            | ((self.is_remote_irr as u32 & 0b1) << 14)
+            | ((self.trigger_mode as u32 & 0b1) << 15)
+            | ((self.is_masked as u32 & 0b1) << 16)
+            | ((self.timer_mode as u32 & 0b11) << 17)
+    }
+}
+
+#[allow(unused)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+enum VectorDeliveryMode {
+    Fixed = 0b000,
+    SMI = 0b010,
+    NMI = 0b100,
+
+    ExtInt = 0b11,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+enum VectorDeliverStatus {
+    Idle = 0,
+    SendPending = 1,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+enum VectorTriggerMode {
+    Edge = 0,
+    Level = 1,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+enum VectorTimerMode {
+    OneShot = 0b00,
+    Periodic = 0b01,
+    TscDeadline = 0b10,
 }
 
 fn verify_in_correct_region(addr: PhysAddr, boot_info: &BootInfo) {
     let addr = addr.as_u64();
 
     for region in boot_info.memory_regions.iter() {
-        trace!("Region: {region:#x?}");
         if addr >= region.start && addr <= region.end {
             trace!("APIC is in region: {region:#?}");
             return;

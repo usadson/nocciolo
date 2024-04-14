@@ -22,7 +22,7 @@ impl AcpiHandler for NoccioloAcpiHandler {
 
         let start = PhysAddr::new(physical_address as _).align_down(4096u64);
         let end = PhysAddr::new((physical_address + size) as _).align_up(4096u64);
-        let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
+        let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::NO_CACHE;
 
         let page_count = (end - start) as usize / 4096;
         let virt = PageAllocator::allocate_n(page_count);

@@ -3,6 +3,7 @@
 
 pub mod apic;
 
+use volatile::Volatile;
 use x86_64::structures::idt::{
     InterruptDescriptorTable,
     InterruptStackFrame,
@@ -13,7 +14,7 @@ use pic8259::ChainedPics;
 use lazy_static::lazy_static;
 use log::trace;
 
-use crate::{hlt_loop, interrupt_println, meta::symbols, print, vga_text_buffer};
+use crate::{hlt_loop, interrupt_println, meta::symbols, vga_text_buffer};
 
 pub const PIC_1_OFFSET: u8 = 32;
 pub const PIC_2_OFFSET: u8 = PIC_1_OFFSET + 8;
@@ -23,6 +24,8 @@ pub const PIC_2_OFFSET: u8 = PIC_1_OFFSET + 8;
 pub enum InterruptIndex {
     Timer = PIC_1_OFFSET,
     Keyboard,
+    SpuriousIoApic = 39,
+    SpuriousLocalApic = 40,
 }
 
 impl InterruptIndex {
@@ -32,6 +35,8 @@ impl InterruptIndex {
 }
 
 lazy_static! {
+    pub static ref TIMER: spin::Mutex<Volatile<usize>> = spin::Mutex::new(Volatile::new(0));
+
     static ref IDT: InterruptDescriptorTable = {
         let mut idt = InterruptDescriptorTable::new();
         idt.divide_error.set_handler_fn(division_error_handler);
@@ -64,6 +69,8 @@ lazy_static! {
 
         idt[InterruptIndex::Timer.as_u8()].set_handler_fn(timer_interrupt_handler);
         idt[InterruptIndex::Keyboard.as_u8()].set_handler_fn(keyboard_interrupt_handler);
+        idt[InterruptIndex::SpuriousLocalApic.as_u8()].set_handler_fn(spurious_local_apic_interrupt_handler);
+        idt[InterruptIndex::SpuriousIoApic.as_u8()].set_handler_fn(spurious_io_apic_interrupt_handler);
 
         idt
     };
@@ -73,6 +80,7 @@ pub static PICS: spin::Mutex<ChainedPics> = spin::Mutex::new(
         ChainedPics::new(PIC_1_OFFSET, PIC_2_OFFSET)
     }
 );
+
 
 pub fn init_idt() {
     trace!("Loading IDT");
@@ -102,7 +110,6 @@ extern "x86-interrupt"
 fn double_fault_handler(stack_frame: InterruptStackFrame, _error_code: u64) -> ! {
     interrupt_begin();
     panic!("EXCEPTION: DOUBLE FAULT ({_error_code:X})\n{:#?}", stack_frame);
-    hlt_loop();
 }
 
 #[no_mangle]
@@ -144,13 +151,33 @@ fn keyboard_interrupt_handler(_stack_frame: InterruptStackFrame) {
 #[no_mangle]
 extern "x86-interrupt"
 fn timer_interrupt_handler(_stack_frame: InterruptStackFrame) {
-    // Do some stuff here
+    let mut timer = TIMER.lock();
+    let previous_value = timer.read();
+    timer.write(previous_value + 1);
 
     unsafe {
         PICS.lock()
             .notify_end_of_interrupt(InterruptIndex::Timer.as_u8());
     }
 }
+
+#[no_mangle]
+extern "x86-interrupt"
+fn spurious_local_apic_interrupt_handler(stack_frame: InterruptStackFrame) {
+    trace!("INTERRUPT: Spurious Local APIC interrupt: {stack_frame:#?}");
+}
+
+#[no_mangle]
+extern "x86-interrupt"
+fn spurious_io_apic_interrupt_handler(stack_frame: InterruptStackFrame) {
+    trace!("INTERRUPT: Spurious I/O APIC interrupt: {stack_frame:#?}");
+}
+
+//
+// Exceptions
+//
+
+// TODO: reorganize these sections
 
 #[no_mangle]
 extern "x86-interrupt"

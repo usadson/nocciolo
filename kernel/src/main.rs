@@ -33,10 +33,10 @@ use bootloader_api::{
 };
 
 use x86_64::VirtAddr;
-use core::panic::PanicInfo;
+use core::{panic::PanicInfo, time::Duration};
 use log::{error, info, trace};
 
-use crate::task::{executor::Executor, Task, keyboard};
+use crate::{device::pit, task::{executor::Executor, keyboard, Task}};
 use crate::vga_text_buffer::WRITER;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -116,8 +116,8 @@ fn init(boot_info: &'static BootInfo) {
     gdt::init();
     interrupts::init_idt();
 
-    trace!("Initializing PICS");
-    unsafe { interrupts::PICS.lock().initialize() };
+    trace!("Initializing PIT");
+    pit::init();
 
     trace!("Enabling Interrupts");
     x86_64::instructions::interrupts::enable();
@@ -130,6 +130,16 @@ fn init(boot_info: &'static BootInfo) {
 
     if let Err(e) = interrupts::apic::init(boot_info) {
         trace!("Failed to initialize APIC: {e:?}");
+
+        trace!("Initializing PICS");
+        unsafe { interrupts::PICS.lock().initialize() };
+    } else {
+        unsafe { interrupts::PICS.lock().disable() };
+    }
+
+    for i in (0..10).rev() {
+        info!("See you in {i} seconds!");
+        pit::sleep(Duration::from_secs(1));
     }
 
     trace!("Initializing Kernel Runtime");

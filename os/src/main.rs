@@ -34,6 +34,46 @@ fn main() -> Result<(), std::io::Error> {
             cmd.arg("-drive").arg(format!("format=raw,file={uefi_path}"));
         }
 
+        Some("info") => {
+            println!("OS> UEFI_PATH: {}", env!("UEFI_PATH"));
+            println!("OS> BIOS_PATH: {}", env!("BIOS_PATH"));
+            println!("OS> KERNEL: {}", env!("KERNEL"));
+            return Ok(());
+        }
+
+        Some("iso") => {
+            if !does_command_exist("mkisofs") {
+                println!("OS> CLI tool `mkisofs` not found\n");
+                println!("URL: https://codeberg.org/schilytools/schilytools\n");
+                println!("Download Instructions:");
+                println!("| OS      | Package Manager | Instructions");
+                println!("|---------|-----------------|----------------------------");
+                println!("| macOS   | macOS           | brew install cdrtools");
+                println!("| macOS   | MacPorts        | sudo port install cdrtools");
+                println!("| Linux   | apt             | sudo apt install cdrkit");
+                println!("| Windows | Chocolately     | N/A");
+                println!("| Windows | Scoop           | scoop install main/cdrtools");
+                println!("| Windows | winget          | N/A");
+                return Ok(());
+            }
+
+            let dir = "target/iso";
+            let img = "nocciolo.img";
+
+            _ = std::fs::create_dir(dir);
+            std::fs::copy(env!("BIOS_PATH"), &format!("{dir}/nocciolo.iso"))?;
+
+            cmd = Command::new("mkisofs");
+            cmd.arg("-U"); // Allows "Untranslated" filenames
+            cmd.arg("-no-emul-boot");
+            cmd.args(["-b", img]);
+            cmd.args(["-hide", img]);
+            cmd.args(["-V", "Nocciolo"]);
+            cmd.args(["-iso-level", "3"]);
+            cmd.args(["-o", &format!("{dir}/nocciolo.iso")]);
+            cmd.args([dir]);
+        }
+
         Some(command) => {
             println!("OS> Unknown command `{command}`");
             return Ok(());
@@ -89,6 +129,7 @@ fn create_lldb_command() -> Result<Command, std::io::Error> {
     writeln!(file, "breakpoint set --name breakpoint_handler")?;
     writeln!(file, "breakpoint set --name hlt_loop")?;
     writeln!(file, "breakpoint set --name fallback_allocator_oom")?;
+    writeln!(file, "breakpoint set --name timer_interrupt_handler")?;
     writeln!(file, "continue")?;
 
     cmd.args(["-s", path]);
@@ -136,4 +177,8 @@ fn setup_env() {
 
     // println!("File: {}", env!("KERNEL"));
     // Err::<(), std::io::Error>(e).unwrap();
+}
+
+fn does_command_exist(name: &str) -> bool {
+    which::which(name).is_ok()
 }
