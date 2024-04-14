@@ -36,7 +36,7 @@ use x86_64::VirtAddr;
 use core::{panic::PanicInfo, time::Duration};
 use log::{error, info, trace};
 
-use crate::{device::pit, task::{executor::Executor, keyboard, Task}};
+use crate::{device::pit, meta::System, task::{executor::Executor, keyboard, Task}};
 use crate::vga_text_buffer::WRITER;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -85,7 +85,7 @@ pub fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     serial_println!("----<[ nocciolo ]>----");
     init(boot_info);
 
-    // crash_test();
+    System::request_shutdown();
 
     let mut executor = Executor::new();
     executor.spawn(Task::new(keyboard::print_keypresses()));
@@ -137,10 +137,10 @@ fn init(boot_info: &'static BootInfo) {
         unsafe { interrupts::PICS.lock().disable() };
     }
 
-    for i in (0..10).rev() {
-        info!("See you in {i} seconds!");
-        pit::sleep(Duration::from_secs(1));
-    }
+    // for i in (0..10).rev() {
+    //     info!("See you in {i} seconds!");
+    //     pit::sleep(Duration::from_secs(1));
+    // }
 
     trace!("Initializing Kernel Runtime");
     meta::init(boot_info);

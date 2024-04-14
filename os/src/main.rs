@@ -97,7 +97,6 @@ fn create_qemu_cmd() -> Command {
 
     // Prevent rebooting because of faults
     cmd.arg("-no-reboot");
-    cmd.arg("-no-shutdown");
 
     // Get CPU reset info
     cmd.args(["-d", "int"]);

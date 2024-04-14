@@ -11,7 +11,7 @@ use core::mem::size_of;
 use core::ptr::slice_from_raw_parts_mut;
 
 use acpi::{fadt::Fadt, madt::Madt, AcpiHandler, AcpiTables, AmlTable, PciConfigRegions, PhysicalMapping};
-use aml::{AmlContext, AmlValue};
+use aml::{value::Args, AmlContext, AmlError, AmlName, AmlValue, Namespace};
 use bootloader_api::BootInfo;
 use lazy_static::lazy_static;
 use log::{info, trace};
@@ -29,9 +29,51 @@ lazy_static! {
 
 type AcpiDataTable<T> = Option<PhysicalMapping<NoccioloAcpiHandler, T>>;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u32)]
+pub enum SystemState {
+    /// Working State.
+    ///
+    /// ### References:
+    /// - [ACPI S0](https://uefi.org/specs/ACPI/6.5/07_Power_and_Performance_Mgmt.html#system-s0-state-working)
+    S0 = 0,
+
+    /// SleepingWithProcessorContextMaintained.
+    ///
+    /// ### References:
+    /// [ACPI S1](https://uefi.org/specs/ACPI/6.5/07_Power_and_Performance_Mgmt.html#system-s1-state-sleeping-with-processor-context-maintained)
+    S1 = 1,
+
+    /// Deeper sleeping than S1.
+    ///
+    /// ### References:
+    /// [ACPI S2](https://uefi.org/specs/ACPI/6.5/07_Power_and_Performance_Mgmt.html#system-s2-state)
+    S2 = 2,
+
+    /// Deeper sleeping than S2.
+    ///
+    /// ### References:
+    /// [ACPI S3](https://uefi.org/specs/ACPI/6.5/07_Power_and_Performance_Mgmt.html#system-s3-state)
+    S3 = 3,
+
+    /// Deeper sleeping than S3.
+    ///
+    /// ### References:
+    /// [ACPI S4](https://uefi.org/specs/ACPI/6.5/07_Power_and_Performance_Mgmt.html#system-s4-state)
+    S4 = 4,
+
+    /// Soft Off (power off/shutdown mode).
+    ///
+    /// ### References:
+    /// [ACPI S4](https://uefi.org/specs/ACPI/6.5/07_Power_and_Performance_Mgmt.html#system-s5-state-soft-off)
+    S5 = 5,
+}
+
 #[derive(Debug, Default)]
 pub struct AcpiData {
     pub madt: AcpiDataTable<Madt>,
+    pub fadt: AcpiDataTable<Fadt>,
+    pub aml: Option<NoccioloAmlContext>,
 }
 
 pub(crate) fn init(boot_info: &'static BootInfo) {
@@ -56,8 +98,11 @@ pub(crate) fn init(boot_info: &'static BootInfo) {
     };
 
     if let Ok(fadt) = tables.find_table::<Fadt>() {
-        let fadt: &Fadt = &*fadt;
-        trace!("FADT: {fadt:#?}");
+        {
+            let fadt: &Fadt = &*fadt;
+            trace!("FADT: {fadt:#?}");
+        }
+        acpi_data.fadt = Some(fadt);
     }
 
     match tables.find_table::<Madt>() {
@@ -76,10 +121,12 @@ pub(crate) fn init(boot_info: &'static BootInfo) {
     context.initialize_objects().expect("Failed to initialize AML objects");
     context.debug();
 
+    acpi_data.aml = Some(context);
+
     trace!("[acpi] Done.")
 }
 
-struct NoccioloAmlContext {
+pub struct NoccioloAmlContext {
     context: AmlContext,
 }
 
@@ -136,6 +183,41 @@ impl NoccioloAmlContext {
             .map_err(|x| DeviceError::aml(x).with_region("initialize_objects"))
     }
 
+    pub fn namespace(&self) -> &Namespace {
+        &self.context.namespace
+    }
+
+    pub fn invoke_method1(&mut self, name: &AmlName, arg: AmlValue) -> Result<AmlValue, AmlError> {
+        const NO_ARG: Option<AmlValue> = None;
+        let mut args = [NO_ARG; 7];
+        args[0] = Some(arg);
+        self.context.invoke_method(name, Args(args))
+    }
+
+    /// \_PTS (Prepare To Sleep)
+    ///
+    /// https://uefi.org/specs/ACPI/6.5/07_Power_and_Performance_Mgmt.html#pts-prepare-to-sleep
+    pub fn invoke_prepare_to_sleep(&mut self, sleeping_state: SystemState) -> Result<(), AmlError> {
+        let method_name = AmlName::from_str("\\_PTS")?;
+        self.invoke_method1(&method_name, AmlValue::Integer(sleeping_state as _))?;
+
+        // The PTS method should return nothing, so even if there were to be a
+        // return value from the platform, we discard it.
+        Ok(())
+    }
+
+    /// \_WAK (System Wake)
+    ///
+    /// https://uefi.org/specs/ACPI/6.5/07_Power_and_Performance_Mgmt.html#wak-system-wake
+    pub fn invoke_system_wake(&mut self, sleeping_state: SystemState) -> Result<(), AmlError> {
+        let method_name = AmlName::from_str("\\_WAK")?;
+        self.invoke_method1(&method_name, AmlValue::Integer(sleeping_state as _))?;
+
+        // The PTS method should return nothing, so even if there were to be a
+        // return value from the platform, we discard it.
+        Ok(())
+    }
+
     pub fn debug(&mut self) {
         trace!("[acpi] [aml] Traversing table...");
         let mut data = Vec::new();
@@ -176,6 +258,13 @@ impl NoccioloAmlContext {
                 info!("ACPI Device: {name} {}", seg.as_str());
             }
         }
+    }
+}
+
+impl Debug for NoccioloAmlContext {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("NoccioloAmlContext")
+            .finish_non_exhaustive()
     }
 }
 
