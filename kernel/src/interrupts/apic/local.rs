@@ -16,8 +16,10 @@ use acpi::{
 };
 
 use bootloader_api::BootInfo;
+use lazy_static::lazy_static;
 use log::{trace, warn};
 
+use spin::Mutex;
 use x86_64::{
     registers::model_specific::Msr,
     PhysAddr,
@@ -29,6 +31,11 @@ use crate::{device::acpi::{
 }, interrupts::PIC_1_OFFSET, logging::Colorize};
 
 const IA32_APIC_BASE_MSR: u32 = 0x1B;
+
+lazy_static! {
+    static ref INSTANCE: Mutex<Option<LocalApic>> = Default::default();
+}
+
 
 fn find_local_apic_base() -> PhysAddr {
     if let Some(madt) = ACPI_DATA.lock().madt.as_ref() {
@@ -58,7 +65,7 @@ fn set_local_apic_base(addr: PhysAddr) {
 }
 
 pub struct LocalApic {
-    mapping: PhysicalMapping<NoccioloAcpiHandler, [u32; 512]>,
+    mapping: PhysicalMapping<NoccioloAcpiHandler, [u8; 0x800]>,
 }
 
 impl LocalApic {
@@ -76,12 +83,20 @@ impl LocalApic {
         set_local_apic_base(addr);
 
         let mapping = unsafe {
-            NoccioloAcpiHandler.map_physical_region(addr.as_u64() as _, 0x400)
+            NoccioloAcpiHandler.map_physical_region(addr.as_u64() as _, 0x800)
         };
+
+        trace!("Local APIC is at {addr:?}");
+        let this =
 
         Self {
             mapping
         }
+
+        ;
+        trace!("Which is mapped from 0x{:X}", unsafe { this.offset_to_addr(0) as usize });
+        trace!("                  to 0x{:X}", this.get_mapped_end() as usize);
+        this
     }
 
     pub fn initialize(&mut self) {
@@ -138,6 +153,7 @@ impl LocalApic {
 
     fn read(&self, register: LocalApicRegister) -> u32 {
         assert!(register.is_readable(), "Register {register:?} is {:?}", register.permissions());
+        trace!("Reading from {register:?} ({:X}h)", register as usize);
         unsafe {
             read_volatile(self.register_to_addr(register))
         }
@@ -145,6 +161,7 @@ impl LocalApic {
 
     fn write(&mut self, register: LocalApicRegister, value: u32) {
         assert!(register.is_writable(), "Register {register:?} is {:?}", register.permissions());
+        trace!("Writing to {register:?} ({:X}h) with value 0x{value:X}", register as usize);
         unsafe {
             let addr = self.register_to_addr(register) as *mut u32;
             write_volatile(addr, value)
@@ -152,59 +169,66 @@ impl LocalApic {
     }
 
     pub(super) unsafe fn register_to_addr(&self, register: LocalApicRegister) -> *mut u32 {
-        self.offset_to_addr((register as usize) * 0x4)
+        let addr = self.offset_to_addr(register as usize);
+        self.ensure_safe_addr(addr);
+        trace!("  which is 0x{addr:p} addr ");
+        addr
     }
 
     pub(super) unsafe fn offset_to_addr(&self, offset: usize) -> *mut u32 {
-        &(self.mapping.virtual_start().as_ref())[offset] as *const u32 as *mut u32
+        ((&(self.mapping.virtual_start().as_ref())[offset]) as *const u8 as usize - 0x900) as *const u32 as *mut u32
     }
+
+    pub fn publish(self) {
+        let mut instance = INSTANCE.lock();
+        *instance = Some(self);
+    }
+
+    fn ensure_safe_addr(&self, addr: *const u32) {
+        debug_assert!(addr < self.get_mapped_end());
+    }
+
+    fn get_mapped_end(&self) -> *const u32 {
+        let addr = unsafe {
+            let addr = self.offset_to_addr(0);
+            (addr as usize) + self.mapping.mapped_length()
+        };
+        addr as *const u32
+    }
+
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(u8)]
+#[repr(usize)]
 #[allow(unused)]
 pub enum LocalApicRegister {
-    #[deprecated]
-    Reserved0,
+    Id = 0x020,
+    Version = 0x030,
 
-    Id,
-    Version,
+    TaskPriority = 0x080,
+    ArbitrationPriority = 0x090,
+    ProcessorPriority = 0x0A0,
+    EndOfInterrupt = 0x0B0,
+    RemoteRead = 0x0C0,
+    LogicalDestination = 0x0D0,
+    DestinationFormat = 0x0E0,
+    SpuriousInterruptVector = 0x0F0,
 
-    #[deprecated]
-    Reserved1,
-    #[deprecated]
-    Reserved2,
-    #[deprecated]
-    Reserved3,
-    #[deprecated]
-    Reserved4,
-    #[deprecated]
-    Reserved5,
+    ErrorStatus = 0x280,
 
-    TaskPriority,
-    ArbitrationPriority,
-    ProcessorPriority,
-    EndOfInterrupt,
-    RemoteRead,
-    LogicalDestination,
-    DestinationFormat,
-    SpuriousInterruptVector,
+    LvtCorrectedMachineCheckInterrupt = 0x2F0,
 
-    ErrorStatus = 0x28,
+    InterruptCommand1 = 0x300,
+    InterruptCommand2 = 0x310,
 
-    LvtCorrectedMachineCheckInterrupt = 0x2F,
+    LvtTimer = 0x320,
+    LvtLint0 = 0x350,
+    LvtLint1 = 0x360,
+    LvtError = 0x370,
+    InitialCount = 0x380,
+    CurrentCount = 0x390,
 
-    InterruptCommand1 = 0x30,
-    InterruptCommand2 = 0x31,
-
-    LvtTimer = 0x32,
-    LvtLint0 = 0x35,
-    LvtLint1 = 0x36,
-    LvtError = 0x37,
-    InitialCount = 0x38,
-    CurrentCount = 0x39,
-
-    DivideConfiguration = 0x3E,
+    DivideConfiguration = 0x3E0,
 }
 
 impl LocalApicRegister {

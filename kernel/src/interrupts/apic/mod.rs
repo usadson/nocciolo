@@ -23,13 +23,15 @@ pub(crate) fn init(boot_info: &BootInfo) -> Result<(), ApicError> {
     local.initialize();
     local.do_test_stuff();
 
+    trace!("APIC has ID {} and version {:x}", local.id(), local.version());
+
     without_interrupts(|| {
         let mut io = IOApic::new(&local);
         io.initialize();
         io.publish();
-    });
 
-    trace!("APIC has ID {} and version {:x}", local.id(), local.version());
+        local.publish();
+    });
 
     Ok(())
 }

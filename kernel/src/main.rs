@@ -85,6 +85,11 @@ pub fn kernel_main(boot_info: &'static mut BootInfo) -> ! {
     serial_println!("----<[ nocciolo ]>----");
     init(boot_info);
 
+    for i in (0..10).rev() {
+        info!("See you in {i} seconds!");
+        pit::sleep(Duration::from_secs(1));
+    }
+
     System::request_shutdown();
 
     let mut executor = Executor::new();

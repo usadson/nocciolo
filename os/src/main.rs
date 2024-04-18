@@ -140,7 +140,7 @@ fn create_lldb_command() -> Result<Command, std::io::Error> {
     let mut file = std::fs::File::create(path)?;
     writeln!(file, "target create {}", env!("KERNEL"))?;
     writeln!(file, "target modules load --file {} --slide 0x8000000000", env!("KERNEL"))?;
-    // writeln!(file, "gdb-remote localhost:1234")?;
+    writeln!(file, "gdb-remote localhost:1234")?;
     writeln!(file, "breakpoint set --name alloc_error_handler")?;
     writeln!(file, "breakpoint set --name page_fault_handler")?;
     writeln!(file, "breakpoint set --name double_fault_handler")?;

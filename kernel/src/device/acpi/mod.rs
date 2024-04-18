@@ -120,7 +120,7 @@ pub(crate) fn init(boot_info: &'static BootInfo) {
     let mut context = NoccioloAmlContext::new(regions);
     context.load_acpi(&tables).expect("Failed to populate ACPI information");
     context.initialize_objects().expect("Failed to initialize AML objects");
-    context.debug();
+    // context.debug();
 
     acpi_data.aml = Some(context);
 
