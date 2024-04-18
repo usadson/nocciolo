@@ -7,8 +7,9 @@ use log::trace;
 mod io;
 mod local;
 
-use io::IOApic;
+pub use io::IOApic;
 use local::LocalApic;
+use x86_64::instructions::interrupts::without_interrupts;
 
 #[derive(Debug, Clone, Copy)]
 pub enum ApicError {
@@ -18,12 +19,15 @@ pub enum ApicError {
 pub(crate) fn init(boot_info: &BootInfo) -> Result<(), ApicError> {
     trace!("Initializing APIC");
 
-    let mut io = IOApic::new();
-    io.initialize();
-
     let mut local = LocalApic::new(boot_info);
     local.initialize();
     local.do_test_stuff();
+
+    without_interrupts(|| {
+        let mut io = IOApic::new(&local);
+        io.initialize();
+        io.publish();
+    });
 
     trace!("APIC has ID {} and version {:x}", local.id(), local.version());
 

@@ -13,7 +13,7 @@ use x86_64::instructions::{
     port::{Port, PortWriteOnly},
 };
 
-use crate::interrupts::TIMER;
+use crate::interrupts::{apic::IOApic, TIMER};
 
 lazy_static! {
     static ref CHANNEL0: Mutex<Port<u8>> = Mutex::new(Port::new(0x40));

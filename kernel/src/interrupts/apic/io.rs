@@ -4,48 +4,100 @@
 use core::{mem, ptr::{read_volatile, write_volatile}};
 
 use acpi::{madt::MadtEntry, AcpiHandler, PhysicalMapping};
+use lazy_static::lazy_static;
 use log::trace;
+use spin::Mutex;
 use x86_64::PhysAddr;
 
 use crate::{device::acpi::{NoccioloAcpiHandler, ACPI_DATA}, interrupts::InterruptIndex};
 
+use super::local::LocalApic;
+
+lazy_static! {
+    static ref INSTANCE: Mutex<Option<IOApic>> = Default::default();
+}
+
 pub struct IOApic {
     mapping: PhysicalMapping<NoccioloAcpiHandler, [u32; 256]>,
     redirection_entry_count: u8,
+    end_of_interrupt_addr: *mut u32,
 }
 
 impl IOApic {
-    pub fn new() -> Self {
+    pub fn new(local: &LocalApic) -> Self {
+        let eoi_addr = unsafe { local.offset_to_addr(0xB0) };
         let addr = find_io_apic_base().expect("NO IOAPIC FOUND :(");
-        Self::from_addr(addr)
+        Self::from_addr(addr, eoi_addr)
+    }
+
+    pub fn end_of_interrupt() {
+        Self::dump_debug_info();
+        Self::with(|this| unsafe {
+            this.end_of_interrupt_addr.write_volatile(0)
+        });
+        Self::dump_debug_info();
+    }
+
+    pub fn dump_debug_info() {
+        Self::with(|this| {
+            let entry = this.read_entry(2);
+            trace!("Entry: {entry:#?}");
+        });
     }
 
     #[must_use]
-    pub fn from_addr(addr: PhysAddr) -> Self {
+    pub fn from_addr(addr: PhysAddr, eoi_addr: *mut u32) -> Self {
         let mapping = unsafe {
             NoccioloAcpiHandler.map_physical_region(addr.as_u64() as _, 0x400)
         };
 
+        assert_eq!(addr.as_u64() % 4096, 0);
+
         let mut this = Self {
             mapping,
             redirection_entry_count: 0,
+            end_of_interrupt_addr: eoi_addr,
         };
 
-        let redirection_entry_count = this.read_redirection_entry_count();
+        let redirection_entry_count = this.read_redirection_entry_count() + 1;
         debug_assert_ne!(redirection_entry_count, 0);
         this.redirection_entry_count = redirection_entry_count;
 
         this
     }
 
+    pub fn publish(self) {
+        let mut instance = INSTANCE.lock();
+        *instance = Some(self);
+    }
+
+    pub fn with<F: FnOnce(&mut Self)>(f: F) {
+        let mut instance = INSTANCE.lock();
+        let Some(instance) =  instance.as_mut() else {
+            return;
+        };
+
+        f(instance)
+    }
+
     pub fn initialize(&mut self) {
         trace!("I/O APIC Version {} with {} redirection entries", self.read_version(), self.redirection_entry_count);
+
+        // self.map(0, InterruptIndex::SpuriousIoApic);
+        self.map(2, InterruptIndex::SpuriousIoApic);
 
         self.map_all_to_spurious_vectors();
         trace!("DUMPING IO APIC");
         for entry in 0..self.redirection_entry_count {
             trace!("Entry #{entry}: {:#?}", self.read_entry(entry));
         }
+    }
+
+    fn map(&mut self, index: u8, vector: InterruptIndex) {
+        let mut entry = self.read_entry(index);
+        entry.mask = InterruptMask::Unmasked;
+        entry.vector = vector as _;
+        self.write_entry(index, entry);
     }
 
     fn map_all_to_spurious_vectors(&mut self) {
@@ -85,17 +137,19 @@ impl IOApic {
     fn write_entry(&mut self, index: u8, entry: IOApicRedirectionEntry) {
         debug_assert!(index < self.redirection_entry_count, "Redirection Entry #{index} falls outside the {} entries", self.redirection_entry_count);
 
-        let value = (entry.vector as u64)
-                  | ((entry.delivery_mode as u64) << 8)
-                  | ((entry.destination_mode as u64) << 11)
-                  | ((entry.delivery_status as u64) << 12)
-                  | ((entry.polarity as u64) << 13)
-                  | ((entry.remote_irr as u64) << 14)
-                  | ((entry.trigger_mode as u64) << 15)
-                  | ((entry.mask as u64) << 16)
-                  | ((entry.destination.as_u8() as u64) << 56);
+        let value_lo = (entry.vector as u32)
+                  | ((entry.delivery_mode as u32) << 8)
+                  | ((entry.destination_mode as u32) << 11)
+                  | ((entry.delivery_status as u32) << 12)
+                  | ((entry.polarity as u32) << 13)
+                  | ((entry.remote_irr as u32) << 14)
+                  | ((entry.trigger_mode as u32) << 15)
+                  | ((entry.mask as u32) << 16);
 
-        self.write_u64(IOApicRegister::RedirectionEntry(index), value);
+        let value_hi = (entry.destination.as_u8() as u32) << 24;
+
+        self.write_u32(IOApicRegister::RedirectionEntry(index), value_lo);
+        self.write_u32(IOApicRegister::RedirectionEntry(index).second_part_redir(), value_hi);
     }
 
     fn read_version(&self) -> u8 {
@@ -134,6 +188,7 @@ impl IOApic {
     }
 
     fn write_u32(&mut self, reg: IOApicRegister, value: u32) {
+        trace!("WRITE @{reg:?} => {value} aka 0x{value:x} aka 0b{value:b}");
         unsafe {
             self.select_register(reg);
             write_volatile(self.offset_to_addr(4), value)
@@ -146,9 +201,14 @@ impl IOApic {
     }
 
     unsafe fn offset_to_addr(&self, offset: usize) -> *mut u32 {
+        let res =
         &(self.mapping.virtual_start().as_ref())[offset] as *const u32 as *mut u32
+        ; trace!("OFFSET {offset} = {res:p}"); res
     }
 }
+
+unsafe impl Send for IOApic {}
+unsafe impl Sync for IOApic {}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct IOApicRedirectionEntry {
@@ -270,7 +330,7 @@ impl IOApicRegister {
 fn find_io_apic_base() -> Option<PhysAddr> {
     if let Some(madt) = ACPI_DATA.lock().madt.as_ref() {
         for entry in madt.entries() {
-            trace!("  MADT entry: {entry:?}");
+            trace!("  MADT entry: {entry:#x?}");
 
             if let MadtEntry::IoApic(apic) = entry {
                 return Some(PhysAddr::new(apic.io_apic_address as _));

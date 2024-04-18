@@ -29,6 +29,7 @@ lazy_static! {
 
 type AcpiDataTable<T> = Option<PhysicalMapping<NoccioloAcpiHandler, T>>;
 
+#[allow(unused)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
 pub enum SystemState {
@@ -269,6 +270,7 @@ impl Debug for NoccioloAmlContext {
 }
 
 struct NoccioloAmlHandler  {
+    #[allow(unused)]
     regions: Option<PciConfigRegions<'static, Global>>,
 }
 

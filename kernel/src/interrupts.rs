@@ -4,17 +4,17 @@
 pub mod apic;
 
 use volatile::Volatile;
-use x86_64::structures::idt::{
+use x86_64::{instructions::bochs_breakpoint, structures::idt::{
     InterruptDescriptorTable,
     InterruptStackFrame,
     PageFaultErrorCode,
-};
+}};
 
 use pic8259::ChainedPics;
 use lazy_static::lazy_static;
 use log::trace;
 
-use crate::{hlt_loop, interrupt_println, meta::symbols, vga_text_buffer};
+use crate::{hlt_loop, interrupt_println, interrupts::apic::IOApic, meta::symbols::{self, Backtrace}, vga_text_buffer};
 
 pub const PIC_1_OFFSET: u8 = 32;
 pub const PIC_2_OFFSET: u8 = PIC_1_OFFSET + 8;
@@ -39,6 +39,8 @@ lazy_static! {
 
     static ref IDT: InterruptDescriptorTable = {
         let mut idt = InterruptDescriptorTable::new();
+        x86_64::set_general_handler!(&mut idt, generic_handler);
+
         idt.divide_error.set_handler_fn(division_error_handler);
         idt.debug.set_handler_fn(debug_handler);
         idt.non_maskable_interrupt.set_handler_fn(non_maskable_interrupt_handler);
@@ -92,6 +94,10 @@ pub fn init_idt() {
 fn interrupt_begin() {
     interrupt_println!("Interrupt Begin");
     unsafe { vga_text_buffer::WRITER.force_unlock() };
+}
+
+fn generic_handler(stack_frame: InterruptStackFrame, index: u8, error_code: Option<u64>) {
+    todo!("handle irq {}", index)
 }
 
 //
@@ -171,6 +177,15 @@ fn spurious_local_apic_interrupt_handler(stack_frame: InterruptStackFrame) {
 extern "x86-interrupt"
 fn spurious_io_apic_interrupt_handler(stack_frame: InterruptStackFrame) {
     trace!("INTERRUPT: Spurious I/O APIC interrupt: {stack_frame:#?}");
+    breakpoint();
+    IOApic::end_of_interrupt();
+}
+
+#[no_mangle]
+extern "C"
+fn breakpoint() {
+    trace!("BREAKPOINT");
+    bochs_breakpoint();
 }
 
 //

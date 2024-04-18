@@ -15,7 +15,7 @@ use acpi::{
     PhysicalMapping,
 };
 
-use bootloader_api::{info::MemoryRegionKind, BootInfo};
+use bootloader_api::BootInfo;
 use log::{trace, warn};
 
 use x86_64::{
@@ -58,7 +58,7 @@ fn set_local_apic_base(addr: PhysAddr) {
 }
 
 pub struct LocalApic {
-    mapping: PhysicalMapping<NoccioloAcpiHandler, [u32; 256]>,
+    mapping: PhysicalMapping<NoccioloAcpiHandler, [u32; 512]>,
 }
 
 impl LocalApic {
@@ -151,12 +151,12 @@ impl LocalApic {
         }
     }
 
-    unsafe fn register_to_addr(&self, register: LocalApicRegister) -> *const u32 {
+    pub(super) unsafe fn register_to_addr(&self, register: LocalApicRegister) -> *mut u32 {
         self.offset_to_addr((register as usize) * 0x4)
     }
 
-    unsafe fn offset_to_addr(&self, offset: usize) -> *const u32 {
-        &(self.mapping.virtual_start().as_ref())[offset] as *const u32
+    pub(super) unsafe fn offset_to_addr(&self, offset: usize) -> *mut u32 {
+        &(self.mapping.virtual_start().as_ref())[offset] as *const u32 as *mut u32
     }
 }
 

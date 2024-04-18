@@ -32,7 +32,7 @@ use bootloader_api::{
     },
 };
 
-use x86_64::VirtAddr;
+use x86_64::{instructions::interrupts::without_interrupts, VirtAddr};
 use core::{panic::PanicInfo, time::Duration};
 use log::{error, info, trace};
 
@@ -116,11 +116,13 @@ fn init(boot_info: &'static BootInfo) {
     gdt::init();
     interrupts::init_idt();
 
+    trace!("Enabling Interrupts");
+
+    trace!("Initializing the PIC");
+    unsafe { interrupts::PICS.lock().initialize() };
+
     trace!("Initializing PIT");
     pit::init();
-
-    trace!("Enabling Interrupts");
-    x86_64::instructions::interrupts::enable();
 
     trace!("Initializing Heap");
     init_heap(boot_info);
@@ -132,10 +134,13 @@ fn init(boot_info: &'static BootInfo) {
         trace!("Failed to initialize APIC: {e:?}");
 
         trace!("Initializing PICS");
-        unsafe { interrupts::PICS.lock().initialize() };
+
     } else {
         unsafe { interrupts::PICS.lock().disable() };
     }
+
+    x86_64::instructions::interrupts::enable();
+    trace!("Interrupts enabled");
 
     // for i in (0..10).rev() {
     //     info!("See you in {i} seconds!");

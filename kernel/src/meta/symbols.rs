@@ -1,7 +1,7 @@
 // Copyright (C) 2024 Tristan Gerritsen <tristan@thewoosh.org>
 // All Rights Reserved.
 
-use core::ptr::slice_from_raw_parts;
+use core::{arch::asm, ptr::slice_from_raw_parts};
 
 use bootloader_api::BootInfo;
 use conquer_once::spin::OnceCell;
@@ -23,6 +23,65 @@ pub(super) fn init(boot_info: &'static BootInfo) {
     };
 
     ELF.init_once(|| Some(data));
+}
+
+pub struct Backtrace;
+
+impl Backtrace {
+    pub fn capture() -> BacktraceIterator {
+        BacktraceIterator {
+            ptr: Self::read_rbp() as *const u64,
+        }
+    }
+
+    pub fn capture_from(ptr: *const u64) -> BacktraceIterator {
+        BacktraceIterator {
+            ptr,
+        }
+    }
+
+    #[inline(always)]
+    fn read_rbp() -> u64 {
+        let rbp: u64;
+        unsafe {
+            asm!("mov %rbp, {0}", out(reg) rbp, options(att_syntax));
+        }
+        rbp
+    }
+}
+
+pub struct BacktraceIterator {
+    ptr: *const u64,
+}
+
+impl Iterator for BacktraceIterator {
+    type Item = BacktraceFrame;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.ptr.is_null() {
+            return None;
+        }
+
+        let ptr = self.ptr;
+        self.ptr = unsafe { *ptr } as *const u64;
+        Some(BacktraceFrame {
+            ptr,
+        })
+    }
+}
+
+pub struct BacktraceFrame {
+    ptr: *const u64,
+}
+
+impl BacktraceFrame {
+    pub fn pointer(&self) -> *const u64 {
+        self.ptr
+    }
+
+    pub fn symbol(&self) -> Option<&'static str> {
+        resolve(self.ptr as _)
+    }
 }
 
 pub fn resolve(offset: u64) -> Option<&'static str> {

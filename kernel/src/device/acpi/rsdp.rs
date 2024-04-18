@@ -1,7 +1,6 @@
 // Copyright (C) 2024 Tristan Gerritsen <tristan@thewoosh.org>
 // All Rights Reserved.
 
-use core::mem;
 use core::mem::size_of;
 use bootloader_api::BootInfo;
 use acpi::{AcpiHandler, PhysicalMapping};
@@ -37,4 +36,3 @@ fn find_rsdp_on_uefi(addr: usize) -> Option<PhysicalMapping<NoccioloAcpiHandler,
         NoccioloAcpiHandler.map_physical_region::<Rsdp>(addr, size)
     })
 }
-
