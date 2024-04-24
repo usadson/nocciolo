@@ -31,11 +31,15 @@ impl IOApic {
     }
 
     pub fn end_of_interrupt() {
-        Self::dump_debug_info();
         Self::with(|this| unsafe {
+            // for idx in 0..this.redirection_entry_count {
+            //     let entry = this.read_entry(idx);
+            //     if entry.delivery_status == DeliveryStatus::SentPending {
+            //         trace!("Possible origin #{idx}dec: {entry:#?}");
+            //     }
+            // }
             this.end_of_interrupt_addr.write_volatile(0)
         });
-        Self::dump_debug_info();
     }
 
     pub fn dump_debug_info() {
@@ -84,7 +88,7 @@ impl IOApic {
         trace!("I/O APIC Version {} with {} redirection entries", self.read_version(), self.redirection_entry_count);
 
         // self.map(0, InterruptIndex::SpuriousIoApic);
-        self.map(2, InterruptIndex::SpuriousIoApic);
+        self.map(2, InterruptIndex::Timer);
 
         self.map_all_to_spurious_vectors();
         trace!("DUMPING IO APIC");
@@ -103,7 +107,11 @@ impl IOApic {
     fn map_all_to_spurious_vectors(&mut self) {
         for index in 0..self.redirection_entry_count {
             let mut entry = self.read_entry(index);
-            entry.vector = InterruptIndex::SpuriousIoApic as u8;
+            if entry.mask == InterruptMask::Unmasked {
+                continue;
+            }
+
+            entry.vector = 100 + index;
             entry.mask = InterruptMask::Unmasked;
             self.write_entry(index, entry);
         }

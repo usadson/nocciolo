@@ -17,7 +17,7 @@ use acpi::{
 
 use bootloader_api::BootInfo;
 use lazy_static::lazy_static;
-use log::{trace, warn};
+use log::{error, trace, warn};
 
 use spin::Mutex;
 use x86_64::{
@@ -25,10 +25,11 @@ use x86_64::{
     PhysAddr,
 };
 
-use crate::{device::acpi::{
-    NoccioloAcpiHandler,
-    ACPI_DATA,
-}, interrupts::PIC_1_OFFSET, logging::Colorize};
+use crate::{
+    device::acpi::{NoccioloAcpiHandler, ACPI_DATA},
+    interrupts::InterruptIndex,
+    logging::Colorize,
+};
 
 const IA32_APIC_BASE_MSR: u32 = 0x1B;
 
@@ -86,6 +87,12 @@ impl LocalApic {
             NoccioloAcpiHandler.map_physical_region(addr.as_u64() as _, 0x800)
         };
 
+        *INSTANCE.lock() = Some(LocalApic {
+            mapping: unsafe {
+                NoccioloAcpiHandler.map_physical_region(addr.as_u64() as _, 0x800)
+            }
+        });
+
         trace!("Local APIC is at {addr:?}");
         let this =
 
@@ -103,13 +110,19 @@ impl LocalApic {
         self.enable();
 
         // Set the LVT Timer interrupt index to our expected interrupt
-        self.write(LocalApicRegister::LvtTimer, PIC_1_OFFSET as _);
+        self.write(LocalApicRegister::LvtTimer, LocalVectorTableRegister::new_timer(InterruptIndex::Timer as _, false, VectorTimerMode::Periodic).as_u32());
+        self.write(LocalApicRegister::LvtLint0, LocalVectorTableRegister::new(InterruptIndex::SpuriousLocalApic as _, false).as_u32());
+        self.write(LocalApicRegister::LvtLint1, LocalVectorTableRegister::new(InterruptIndex::SpuriousLocalApic as _, false).as_u32());
+
+        // self.write(LocalApicRegister::LvtCorrectedMachineCheckInterrupt, LocalVectorTableRegister::new(InterruptIndex::SpuriousLocalApic as _, false, VectorTimerMode::Periodic).as_u32());
+        self.write(LocalApicRegister::LvtError, LocalVectorTableRegister::new(InterruptIndex::LvtError as _, false).as_u32());
 
         self.set_timer_initial_counter(0);
         // sleep :(
         let count = self.current_count();
         // adjust
         // divide
+        self.set_timer_divide(3);
 
     }
 
@@ -182,6 +195,37 @@ impl LocalApic {
     pub fn publish(self) {
         let mut instance = INSTANCE.lock();
         *instance = Some(self);
+    }
+
+    pub fn error_status() -> Option<u32> {
+        let instance = INSTANCE.lock();
+        let instance = instance.as_ref()?;
+
+        let timer = LocalVectorTableRegister::from_u32(instance.read(LocalApicRegister::LvtTimer));
+        let error = LocalVectorTableRegister::from_u32(instance.read(LocalApicRegister::LvtError));
+        let lint0 = LocalVectorTableRegister::from_u32(instance.read(LocalApicRegister::LvtLint0));
+        let lint1 = LocalVectorTableRegister::from_u32(instance.read(LocalApicRegister::LvtLint1));
+
+        trace!("Timer: {timer:#?}");
+        trace!("Error: {error:#?}");
+        trace!("Lint0: {lint0:#?}");
+        trace!("Lint1: {lint1:#?}");
+
+        Some(instance.read(LocalApicRegister::ErrorStatus))
+    }
+
+    pub fn exists() -> bool {
+        INSTANCE.lock().is_some()
+    }
+
+    pub fn end_of_interrupt() {
+        let mut instance = INSTANCE.lock();
+        let Some(instance) = instance.as_mut() else {
+            error!("Logic Error: EOI sent to LocalApic object but it has no instance");
+            return;
+        };
+
+        instance.write(LocalApicRegister::EndOfInterrupt, 0);
     }
 
     fn ensure_safe_addr(&self, addr: *const u32) {
@@ -289,6 +333,7 @@ pub enum ApicRegisterPermissions {
     WriteOnly,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
 struct LocalVectorTableRegister {
     vector: u8,
     delivery_mode: VectorDeliveryMode,
@@ -301,11 +346,26 @@ struct LocalVectorTableRegister {
 }
 
 impl LocalVectorTableRegister {
-    pub fn new_timer(vector: u8, status: VectorDeliverStatus, is_masked: bool, mode: VectorTimerMode) -> Self {
+    pub fn new(vector: u8, is_masked: bool) -> Self {
+        Self {
+            vector,
+            delivery_mode: VectorDeliveryMode::Fixed,
+            delivery_status: VectorDeliverStatus::Idle,
+            is_masked,
+            timer_mode: VectorTimerMode::OneShot,
+
+            // Reserved:
+            is_low_triggered: false,
+            is_remote_irr: false,
+            trigger_mode: VectorTriggerMode::Edge,
+        }
+    }
+
+    pub fn new_timer(vector: u8, is_masked: bool, mode: VectorTimerMode) -> Self {
         Self {
             vector,
             delivery_mode: VectorDeliveryMode::NMI,
-            delivery_status: status,
+            delivery_status: VectorDeliverStatus::Idle,
             is_masked,
             timer_mode: mode,
 
@@ -317,7 +377,7 @@ impl LocalVectorTableRegister {
     }
 
     pub fn new_masked_timer() -> Self {
-        Self::new_timer(0, VectorDeliverStatus::Idle, true, VectorTimerMode::Periodic)
+        Self::new_timer(0, true, VectorTimerMode::Periodic)
     }
 
     pub fn as_u32(&self) -> u32 {
@@ -331,6 +391,20 @@ impl LocalVectorTableRegister {
             | ((self.trigger_mode as u32 & 0b1) << 15)
             | ((self.is_masked as u32 & 0b1) << 16)
             | ((self.timer_mode as u32 & 0b11) << 17)
+    }
+
+    pub fn from_u32(value: u32) -> Self {
+        trace!("LVT from u32:   0b{value:b}   0x{value:X}     dec {value}");
+        Self {
+            vector: (value & 0xFF) as _,
+            delivery_mode: unsafe { core::mem::transmute(((value >> 8) & 0b111) as u8) },
+            delivery_status: unsafe { core::mem::transmute(((value >> 12) & 0b1) as u8) },
+            is_low_triggered: unsafe { core::mem::transmute(((value >> 13) & 0b1) as u8) },
+            is_remote_irr: unsafe { core::mem::transmute(((value >> 14) & 0b1) as u8) },
+            trigger_mode: unsafe { core::mem::transmute(((value >> 15) & 0b1) as u8) },
+            is_masked: unsafe { core::mem::transmute(((value >> 16) & 0b1) as u8) },
+            timer_mode: unsafe { core::mem::transmute(((value >> 17) & 0b1) as u8) },
+        }
     }
 }
 

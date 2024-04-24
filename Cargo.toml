@@ -9,6 +9,7 @@ default-members = ["os"]
 
 [profile.dev]
 panic = "abort"
+debug = "none"
 
 [profile.release]
 panic = "abort"

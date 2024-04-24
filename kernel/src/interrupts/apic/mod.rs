@@ -8,7 +8,7 @@ mod io;
 mod local;
 
 pub use io::IOApic;
-use local::LocalApic;
+pub use local::LocalApic;
 use x86_64::instructions::interrupts::without_interrupts;
 
 #[derive(Debug, Clone, Copy)]

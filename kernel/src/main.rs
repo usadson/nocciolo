@@ -126,9 +126,6 @@ fn init(boot_info: &'static BootInfo) {
     trace!("Initializing the PIC");
     unsafe { interrupts::PICS.lock().initialize() };
 
-    trace!("Initializing PIT");
-    pit::init();
-
     trace!("Initializing Heap");
     init_heap(boot_info);
 
@@ -141,16 +138,14 @@ fn init(boot_info: &'static BootInfo) {
         trace!("Initializing PICS");
 
     } else {
-        unsafe { interrupts::PICS.lock().disable() };
+        // unsafe { interrupts::PICS.lock().disable() };
     }
+
+    trace!("Initializing PIT");
+    pit::init();
 
     x86_64::instructions::interrupts::enable();
     trace!("Interrupts enabled");
-
-    // for i in (0..10).rev() {
-    //     info!("See you in {i} seconds!");
-    //     pit::sleep(Duration::from_secs(1));
-    // }
 
     trace!("Initializing Kernel Runtime");
     meta::init(boot_info);

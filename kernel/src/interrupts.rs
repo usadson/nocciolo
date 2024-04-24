@@ -3,6 +3,8 @@
 
 pub mod apic;
 
+use core::hint::spin_loop;
+
 use volatile::Volatile;
 use x86_64::{instructions::bochs_breakpoint, structures::idt::{
     InterruptDescriptorTable,
@@ -14,7 +16,7 @@ use pic8259::ChainedPics;
 use lazy_static::lazy_static;
 use log::trace;
 
-use crate::{hlt_loop, interrupt_println, interrupts::apic::IOApic, meta::symbols::{self, Backtrace}, vga_text_buffer};
+use crate::{hlt_loop, interrupt_println, interrupts::apic::{IOApic, LocalApic}, meta::symbols::{self, Backtrace}, vga_text_buffer};
 
 pub const PIC_1_OFFSET: u8 = 32;
 pub const PIC_2_OFFSET: u8 = PIC_1_OFFSET + 8;
@@ -26,6 +28,7 @@ pub enum InterruptIndex {
     Keyboard,
     SpuriousIoApic = 39,
     SpuriousLocalApic = 40,
+    LvtError = 41,
 }
 
 impl InterruptIndex {
@@ -73,6 +76,7 @@ lazy_static! {
         idt[InterruptIndex::Keyboard.as_u8()].set_handler_fn(keyboard_interrupt_handler);
         idt[InterruptIndex::SpuriousLocalApic.as_u8()].set_handler_fn(spurious_local_apic_interrupt_handler);
         idt[InterruptIndex::SpuriousIoApic.as_u8()].set_handler_fn(spurious_io_apic_interrupt_handler);
+        idt[InterruptIndex::LvtError.as_u8()].set_handler_fn(local_apic_error_interrupt_handler);
 
         idt
     };
@@ -97,7 +101,7 @@ fn interrupt_begin() {
 }
 
 fn generic_handler(stack_frame: InterruptStackFrame, index: u8, error_code: Option<u64>) {
-    todo!("handle irq {}", index)
+    todo!("handle irq {} error code {error_code:#?}", index)
 }
 
 //
@@ -157,14 +161,26 @@ fn keyboard_interrupt_handler(_stack_frame: InterruptStackFrame) {
 #[no_mangle]
 extern "x86-interrupt"
 fn timer_interrupt_handler(_stack_frame: InterruptStackFrame) {
-    let mut timer = TIMER.lock();
-    let previous_value = timer.read();
-    timer.write(previous_value + 1);
+    interrupt_begin();
+    interrupt_println!("INTERRUPT: TIMER");
+    trace!("Local APIC Error Status: {:?}", LocalApic::error_status());
+    // let mut timer = TIMER.lock();
+    // let previous_value = timer.read();
+    // timer.write(previous_value + 1);
 
-    unsafe {
-        PICS.lock()
-            .notify_end_of_interrupt(InterruptIndex::Timer.as_u8());
+    // trace!("TIMER");
+
+    if LocalApic::exists() {
+        trace!("TIMER for APIC");
+        LocalApic::end_of_interrupt();
     }
+    // else {
+        trace!("TIMER for PICS");
+        unsafe {
+            PICS.lock()
+                .notify_end_of_interrupt(InterruptIndex::Timer.as_u8());
+        }
+    // }
 }
 
 #[no_mangle]
@@ -175,9 +191,19 @@ fn spurious_local_apic_interrupt_handler(stack_frame: InterruptStackFrame) {
 
 #[no_mangle]
 extern "x86-interrupt"
+fn local_apic_error_interrupt_handler(stack_frame: InterruptStackFrame) {
+    trace!("INTERRUPT: Local APIC Error: {stack_frame:#?}");
+
+    trace!("Status: {:?}", LocalApic::error_status());
+
+    loop { spin_loop() }
+}
+
+#[no_mangle]
+extern "x86-interrupt"
 fn spurious_io_apic_interrupt_handler(stack_frame: InterruptStackFrame) {
     trace!("INTERRUPT: Spurious I/O APIC interrupt: {stack_frame:#?}");
-    breakpoint();
+    // breakpoint();
     IOApic::end_of_interrupt();
 }
 
@@ -206,6 +232,8 @@ extern "x86-interrupt"
 fn non_maskable_interrupt_handler(stack_frame: InterruptStackFrame) {
     interrupt_begin();
     interrupt_println!("EXCEPTION: NMI\n{:#?}", stack_frame);
+    trace!("Local APIC Error Status: {:?}", LocalApic::error_status());
+    loop { spin_loop(); }
 }
 
 #[no_mangle]
