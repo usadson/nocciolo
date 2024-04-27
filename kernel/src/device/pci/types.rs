@@ -1,6 +1,8 @@
 // Copyright (C) 2024 Tristan Gerritsen <tristan@thewoosh.org>
 // All Rights Reserved.
 
+use acpi::mcfg::McfgEntry;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd)]
 pub struct PciAddress {
     pub segment: u16,
@@ -23,6 +25,14 @@ impl PciAddress {
             | ((self.function as u32) << 8)
             | (offset as u32 & 0xFC)
             | (enabled)
+    }
+
+    #[must_use]
+    pub fn create_express_offset(&self, offset: u16, bus_number_start: u8) -> u64 {
+        ((self.bus as u64 - bus_number_start as u64) << 20)
+                | (((self.device & 0b11111) as u64) << 15)
+                | (((self.function & 0b111) as u64) << 12)
+                + ((offset & 0xFFF) as u64)
     }
 }
 

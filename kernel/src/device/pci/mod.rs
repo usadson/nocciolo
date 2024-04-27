@@ -6,6 +6,7 @@ mod types;
 
 use log::{info, trace};
 
+use self::config::PciExpressConfigurationSpace;
 pub use self::{
     config::{
         ConfigurationSpaceMechanism,
@@ -21,10 +22,19 @@ pub use self::{
     },
 };
 
+use super::acpi::ACPI_DATA;
+
 pub(super) fn init(boot_info: &bootloader_api::BootInfo) {
     _ = boot_info;
 
-    let mechanism = PciLocalBusConfigurationSpace;
+    if let Some(pci_express) = try_create_pci_express_mechanism() {
+        init_using(&pci_express);
+    } else {
+        init_using(&PciLocalBusConfigurationSpace);
+    }
+}
+
+fn init_using(mechanism: &impl ConfigurationSpaceMechanism) {
     trace!("Enumerating devices...");
 
     let mut devices = 0;
@@ -45,4 +55,11 @@ pub(super) fn init(boot_info: &bootloader_api::BootInfo) {
     }
 
     info!("Found {devices} PCI devices");
+}
+
+fn try_create_pci_express_mechanism() -> Option<PciExpressConfigurationSpace> {
+    let acpi = ACPI_DATA.lock();
+    let mcfg_entries = acpi.mcfg.as_ref()?.entries().to_vec();
+
+    Some(PciExpressConfigurationSpace::new(mcfg_entries))
 }

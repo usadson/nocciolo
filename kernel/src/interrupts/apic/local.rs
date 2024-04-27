@@ -41,11 +41,11 @@ lazy_static! {
 fn find_local_apic_base() -> PhysAddr {
     if let Some(madt) = ACPI_DATA.lock().madt.as_ref() {
         for entry in madt.entries() {
-            trace!("  MADT entry: {entry:?}");
+            // trace!("  MADT entry: {entry:?}");
 
             if let MadtEntry::LocalApicAddressOverride(entry) = entry {
                 let addr = entry.local_apic_address;
-                trace!("Local APIC base was overridden (MADT entry): {addr}");
+                // trace!("Local APIC base was overridden (MADT entry): {addr}");
                 return PhysAddr::new(addr);
             }
         }
@@ -54,7 +54,7 @@ fn find_local_apic_base() -> PhysAddr {
     // The model-specific register contains the base
     let apic_base_msr = Msr::new(IA32_APIC_BASE_MSR);
     let apic_base = unsafe { apic_base_msr.read() };
-    trace!("Local APIC base was found in the MSR: {:x}", apic_base);
+    // trace!("Local APIC base was found in the MSR: {:x}", apic_base);
     PhysAddr::new(apic_base)
 }
 
@@ -93,7 +93,7 @@ impl LocalApic {
             }
         });
 
-        trace!("Local APIC is at {addr:?}");
+        // trace!("Local APIC is at {addr:?}");
         let this =
 
         Self {
@@ -101,8 +101,8 @@ impl LocalApic {
         }
 
         ;
-        trace!("Which is mapped from 0x{:X}", unsafe { this.offset_to_addr(0) as usize });
-        trace!("                  to 0x{:X}", this.get_mapped_end() as usize);
+        // trace!("Which is mapped from 0x{:X}", unsafe { this.offset_to_addr(0) as usize });
+        // trace!("                  to 0x{:X}", this.get_mapped_end() as usize);
         this
     }
 
@@ -134,9 +134,9 @@ impl LocalApic {
     }
 
     pub fn do_test_stuff(&mut self) {
-        trace!("Timer LVT is set to: 0x{:x}", self.read(LocalApicRegister::LvtTimer));
-        trace!("LINT0 is set to: 0x{:x}", self.read(LocalApicRegister::LvtLint0));
-        trace!("LINT1 is set to: 0x{:x}", self.read(LocalApicRegister::LvtLint1));
+        // trace!("Timer LVT is set to: 0x{:x}", self.read(LocalApicRegister::LvtTimer));
+        // trace!("LINT0 is set to: 0x{:x}", self.read(LocalApicRegister::LvtLint0));
+        // trace!("LINT1 is set to: 0x{:x}", self.read(LocalApicRegister::LvtLint1));
     }
 
     pub fn id(&self) -> u32 {
@@ -166,7 +166,7 @@ impl LocalApic {
 
     fn read(&self, register: LocalApicRegister) -> u32 {
         assert!(register.is_readable(), "Register {register:?} is {:?}", register.permissions());
-        trace!("Reading from {register:?} ({:X}h)", register as usize);
+        // trace!("Reading from {register:?} ({:X}h)", register as usize);
         unsafe {
             read_volatile(self.register_to_addr(register))
         }
@@ -174,7 +174,7 @@ impl LocalApic {
 
     fn write(&mut self, register: LocalApicRegister, value: u32) {
         assert!(register.is_writable(), "Register {register:?} is {:?}", register.permissions());
-        trace!("Writing to {register:?} ({:X}h) with value 0x{value:X}", register as usize);
+        // trace!("Writing to {register:?} ({:X}h) with value 0x{value:X}", register as usize);
         unsafe {
             let addr = self.register_to_addr(register) as *mut u32;
             write_volatile(addr, value)
@@ -184,7 +184,7 @@ impl LocalApic {
     pub(super) unsafe fn register_to_addr(&self, register: LocalApicRegister) -> *mut u32 {
         let addr = self.offset_to_addr(register as usize);
         self.ensure_safe_addr(addr);
-        trace!("  which is 0x{addr:p} addr ");
+        // trace!("  which is 0x{addr:p} addr ");
         addr
     }
 
@@ -206,10 +206,10 @@ impl LocalApic {
         let lint0 = LocalVectorTableRegister::from_u32(instance.read(LocalApicRegister::LvtLint0));
         let lint1 = LocalVectorTableRegister::from_u32(instance.read(LocalApicRegister::LvtLint1));
 
-        trace!("Timer: {timer:#?}");
-        trace!("Error: {error:#?}");
-        trace!("Lint0: {lint0:#?}");
-        trace!("Lint1: {lint1:#?}");
+        // trace!("Timer: {timer:#?}");
+        // trace!("Error: {error:#?}");
+        // trace!("Lint0: {lint0:#?}");
+        // trace!("Lint1: {lint1:#?}");
 
         Some(instance.read(LocalApicRegister::ErrorStatus))
     }
@@ -364,7 +364,7 @@ impl LocalVectorTableRegister {
     pub fn new_timer(vector: u8, is_masked: bool, mode: VectorTimerMode) -> Self {
         Self {
             vector,
-            delivery_mode: VectorDeliveryMode::NMI,
+            delivery_mode: VectorDeliveryMode::Fixed,
             delivery_status: VectorDeliverStatus::Idle,
             is_masked,
             timer_mode: mode,
@@ -394,7 +394,7 @@ impl LocalVectorTableRegister {
     }
 
     pub fn from_u32(value: u32) -> Self {
-        trace!("LVT from u32:   0b{value:b}   0x{value:X}     dec {value}");
+        // trace!("LVT from u32:   0b{value:b}   0x{value:X}     dec {value}");
         Self {
             vector: (value & 0xFF) as _,
             delivery_mode: unsafe { core::mem::transmute(((value >> 8) & 0b111) as u8) },
@@ -446,7 +446,7 @@ fn verify_in_correct_region(addr: PhysAddr, boot_info: &BootInfo) {
 
     for region in boot_info.memory_regions.iter() {
         if addr >= region.start && addr <= region.end {
-            trace!("APIC is in region: {region:#?}");
+            // trace!("APIC is in region: {region:#?}");
             return;
         }
     }

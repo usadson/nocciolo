@@ -2,6 +2,7 @@
 // All Rights Reserved.
 
 pub mod acpi;
+pub mod ahci;
 pub mod pci;
 pub mod pit;
 mod net;
@@ -12,6 +13,7 @@ use bootloader_api::BootInfo;
 
 pub fn init(boot_info: &'static BootInfo) {
     pci::init(boot_info);
+    ahci::init();
 }
 
 pub trait GenericDevice {

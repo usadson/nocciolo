@@ -10,7 +10,7 @@ use core::fmt::Debug;
 use core::mem::size_of;
 use core::ptr::slice_from_raw_parts_mut;
 
-use acpi::{fadt::Fadt, madt::Madt, AcpiHandler, AcpiTables, AmlTable, PciConfigRegions, PhysicalMapping};
+use acpi::{fadt::Fadt, madt::Madt, mcfg::Mcfg, AcpiHandler, AcpiTables, AmlTable, PciConfigRegions, PhysicalMapping};
 use aml::{value::Args, AmlContext, AmlError, AmlName, AmlValue, Namespace};
 use bootloader_api::BootInfo;
 use lazy_static::lazy_static;
@@ -73,6 +73,7 @@ pub enum SystemState {
 #[derive(Debug, Default)]
 pub struct AcpiData {
     pub madt: AcpiDataTable<Madt>,
+    pub mcfg: AcpiDataTable<Mcfg>,
     pub fadt: AcpiDataTable<Fadt>,
     pub aml: Option<NoccioloAmlContext>,
 }
@@ -110,6 +111,16 @@ pub(crate) fn init(boot_info: &'static BootInfo) {
         Ok(madt) => acpi_data.madt = Some(madt),
         Err(e) => {
             trace!("Failed to find MADT table: {e:?}");
+        }
+    }
+
+    match tables.find_table::<Mcfg>() {
+        Ok(mcfg) => {
+            trace!("MCFG: {:#?}", mcfg.entries());
+            acpi_data.mcfg = Some(mcfg);
+        }
+        Err(e) => {
+            panic!("Failed to find MCFG table: {e:?}");
         }
     }
 

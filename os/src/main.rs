@@ -110,6 +110,8 @@ fn create_bochs_cmd() -> Command {
 fn create_qemu_cmd() -> Command {
     let mut cmd = Command::new("qemu-system-x86_64");
 
+    cmd.args(["-M", "q35"]);
+
     // Prevent rebooting because of faults
     cmd.arg("-no-reboot");
 
@@ -127,6 +129,11 @@ fn create_qemu_cmd() -> Command {
         // Attach serial output to stdio
         cmd.args(["-serial", "stdio"]);
     }
+
+    cmd.args(["-hda", ensure_storage_path().unwrap()]);
+    // cmd.args(["-drive", "id=disk", &format!("file={},if=none", ensure_storage_path().unwrap())]);
+    // cmd.args(["-device", "ahci,id=ahci"]);
+    // cmd.args(["-device", "ide-hd,drive=disk,bus=ahci.0"]);
 
     cmd
 }
@@ -210,4 +217,19 @@ fn setup_env() -> Result<(), std::io::Error> {
 
 fn does_command_exist(name: &str) -> bool {
     which::which(name).is_ok()
+}
+
+fn ensure_storage_path() -> Result<&'static str, std::io::Error> {
+    let img = "target/iso/storage.img";
+
+    if std::path::Path::new(img).exists() {
+        return Ok(img);
+    }
+
+    Command::new("qemu-img")
+        .args(["create", "-f", "qcow2", img, "10G"])
+        .spawn()?
+        .wait()?;
+
+    Ok(img)
 }

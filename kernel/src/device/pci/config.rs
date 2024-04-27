@@ -1,9 +1,14 @@
 // Copyright (C) 2024 Tristan Gerritsen <tristan@thewoosh.org>
 // All Rights Reserved.
 
+use acpi::{mcfg::McfgEntry, AcpiHandler, PhysicalMapping};
+use alloc::vec::Vec;
 use lazy_static::lazy_static;
+use log::warn;
 use spin::Mutex;
 use x86_64::instructions::port::{PortGeneric, ReadWriteAccess, WriteOnlyAccess};
+
+use crate::device::acpi::NoccioloAcpiHandler;
 
 use super::{PciAddress, PciClassCode, PciDeviceId, PciHeaderType, PciSubclass, PciVendorId};
 
@@ -133,6 +138,86 @@ impl<'a, Mechanism> Iterator for DeviceEnumerator<'a, Mechanism>
         }
 
         None
+    }
+}
+
+pub struct PciExpressConfigurationSpace {
+    mcfg_entries: Vec<McfgEntry>,
+    mappings: Vec<PhysicalMapping<NoccioloAcpiHandler, u16>>,
+}
+
+impl PciExpressConfigurationSpace {
+    pub fn new(entries: Vec<McfgEntry>) -> PciExpressConfigurationSpace {
+        let mappings = entries.iter()
+            .map(|entry| {
+                let max = PciAddress {
+                    segment: entry.pci_segment_group,
+                    bus: entry.bus_number_end,
+                    device: 255,
+                    function: 255,
+                };
+                let size = max.create_express_offset(u16::MAX, entry.bus_number_start);
+                log::trace!("MCFG entry of size 0x{size:X}");
+                unsafe {
+                    NoccioloAcpiHandler.map_physical_region(
+                        entry.base_address as usize,
+                        size as usize,
+                    )
+                }
+            })
+            .collect();
+
+        Self {
+            mcfg_entries: entries,
+            mappings,
+        }
+    }
+
+    fn config_space_to_address_space<T>(&self, addr: PciAddress, offset: u16) -> Option<*mut T> {
+        for (idx, entry) in self.mcfg_entries.iter().enumerate() {
+            if entry.pci_segment_group != addr.segment {
+                continue;
+            }
+
+            if addr.bus < entry.bus_number_start || addr.bus > entry.bus_number_end {
+                continue;
+            }
+
+            let addr = addr.create_express_offset(offset, entry.bus_number_start);
+            let addr = self.mappings.get(idx)?.virtual_start().as_ptr() as u64 + addr;
+            return Some(addr as *mut T);
+        }
+
+        warn!("Tried to read word outside PCI-E address space");
+        None
+    }
+
+    fn read<T>(&self, addr: PciAddress, offset: u16) -> T
+            where T: Copy + Default {
+        let Some(addr) = self.config_space_to_address_space(addr, offset) else {
+            return T::default();
+        };
+        unsafe { *addr }
+    }
+}
+
+impl ConfigurationSpaceMechanism for PciExpressConfigurationSpace {
+    fn read_word(&self, addr: PciAddress, offset: u16) -> u16 {
+        self.read(addr, offset)
+    }
+
+    fn read_dword(&self, addr: PciAddress, offset: u16) -> u32 {
+        self.read(addr, offset)
+    }
+
+    fn write_word(&self, addr: PciAddress, offset: u16, value: u16) {
+        let Some(addr) = self.config_space_to_address_space(addr, offset) else {
+            return;
+        };
+
+        unsafe {
+            *addr = value;
+        }
     }
 }
 

@@ -35,7 +35,7 @@ impl IOApic {
             // for idx in 0..this.redirection_entry_count {
             //     let entry = this.read_entry(idx);
             //     if entry.delivery_status == DeliveryStatus::SentPending {
-            //         trace!("Possible origin #{idx}dec: {entry:#?}");
+            //         // trace!("Possible origin #{idx}dec: {entry:#?}");
             //     }
             // }
             this.end_of_interrupt_addr.write_volatile(0)
@@ -45,7 +45,7 @@ impl IOApic {
     pub fn dump_debug_info() {
         Self::with(|this| {
             let entry = this.read_entry(2);
-            trace!("Entry: {entry:#?}");
+            // trace!("Entry: {entry:#?}");
         });
     }
 
@@ -85,16 +85,16 @@ impl IOApic {
     }
 
     pub fn initialize(&mut self) {
-        trace!("I/O APIC Version {} with {} redirection entries", self.read_version(), self.redirection_entry_count);
+        // trace!("I/O APIC Version {} with {} redirection entries", self.read_version(), self.redirection_entry_count);
 
         // self.map(0, InterruptIndex::SpuriousIoApic);
         self.map(2, InterruptIndex::Timer);
 
         self.map_all_to_spurious_vectors();
-        trace!("DUMPING IO APIC");
-        for entry in 0..self.redirection_entry_count {
-            trace!("Entry #{entry}: {:#?}", self.read_entry(entry));
-        }
+        // trace!("DUMPING IO APIC");
+        // for entry in 0..self.redirection_entry_count {
+        //     trace!("Entry #{entry}: {:#?}", self.read_entry(entry));
+        // }
     }
 
     fn map(&mut self, index: u8, vector: InterruptIndex) {
@@ -187,16 +187,16 @@ impl IOApic {
     }
 
     fn read_u32(&self, reg: IOApicRegister) -> u32 {
-        let val =
+        // let val =
         unsafe {
             self.select_register(reg);
             read_volatile(self.offset_to_addr(4))
         }
-        ; trace!("READ @{reg:?} => {val} aka 0x{val:x} aka 0b{val:b}"); val
+        // ; trace!("READ @{reg:?} => {val} aka 0x{val:x} aka 0b{val:b}"); val
     }
 
     fn write_u32(&mut self, reg: IOApicRegister, value: u32) {
-        trace!("WRITE @{reg:?} => {value} aka 0x{value:x} aka 0b{value:b}");
+        // trace!("WRITE @{reg:?} => {value} aka 0x{value:x} aka 0b{value:b}");
         unsafe {
             self.select_register(reg);
             write_volatile(self.offset_to_addr(4), value)
@@ -209,9 +209,9 @@ impl IOApic {
     }
 
     unsafe fn offset_to_addr(&self, offset: usize) -> *mut u32 {
-        let res =
+        // let res =
         &(self.mapping.virtual_start().as_ref())[offset] as *const u32 as *mut u32
-        ; trace!("OFFSET {offset} = {res:p}"); res
+        // ; trace!("OFFSET {offset} = {res:p}"); res
     }
 }
 
@@ -338,7 +338,7 @@ impl IOApicRegister {
 fn find_io_apic_base() -> Option<PhysAddr> {
     if let Some(madt) = ACPI_DATA.lock().madt.as_ref() {
         for entry in madt.entries() {
-            trace!("  MADT entry: {entry:#x?}");
+            // trace!("  MADT entry: {entry:#x?}");
 
             if let MadtEntry::IoApic(apic) = entry {
                 return Some(PhysAddr::new(apic.io_apic_address as _));
